@@ -1,0 +1,79 @@
+package internal
+
+import (
+	"os"
+	"regexp"
+	"testing"
+
+	"github.com/aquasecurity/trivy-db/pkg/types"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestLoadConfig(t *testing.T) {
+	bytes, err := os.ReadFile("../example/.trivy-gh.yaml")
+	assert.NoError(t, err)
+
+	os.Setenv("GITHUB_TOKEN", "token")
+	c1, err := LoadConfig(bytes)
+	if assert.NoError(t, err) {
+		c2 := &Config{
+			Github: ConfigGithub{
+				Token:          "token",
+				IssueRepoOwner: "airfocusio",
+				IssueRepoName:  "trivy-gh-test",
+				LabelPrefix:    "",
+			},
+			Files: []regexp.Regexp{
+				*regexp.MustCompile("^/k8s/.*.yaml"),
+			},
+			Mitigations: []ConfigMitigation{
+				{
+					Key:         "not-used",
+					Label:       "Not used",
+					AllowManual: true,
+				},
+				{
+					Key:         "no-public-networking",
+					Label:       "No public networking",
+					AllowManual: true,
+				},
+			},
+			Policies: []ConfigPolicy{
+				{
+					Comment: "Bash can only be executed from inside the container.\n",
+					Match: ConfigPolicyMatch{
+						PkgName: "bash",
+					},
+					Action: ConfigPolicyAction{
+						Mitigate: []string{"not-used"},
+					},
+				},
+				{
+					Comment: "This container is purely internal.\nSo we can ignore it.\n",
+					Match: ConfigPolicyMatch{
+						ArtifactNameShort: "ghcr.io/airfocusio/trivy-gh-test-debian",
+						CVSS: ConfigPolicyMatchCVSS{
+							AV: []string{"N"},
+						},
+					},
+					Action: ConfigPolicyAction{
+						Mitigate: []string{"no-public-networking"},
+					},
+				},
+				{
+					Match: ConfigPolicyMatch{
+						CVSS: ConfigPolicyMatchCVSS{ScoreLowerThan: 4},
+					},
+					Action: ConfigPolicyAction{
+						Ignore: true,
+					},
+				},
+			},
+			CVSSSources: []types.SourceID{"nvd", "redhat"},
+		}
+		assert.Equal(t, c2.Github, c1.Github)
+		assert.Equal(t, c2.Files, c1.Files)
+		assert.Equal(t, c2.Policies, c1.Policies)
+		assert.Equal(t, c2.CVSSSources, c1.CVSSSources)
+	}
+}

@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment1
+spec:
+  template:
+    spec:
+      containers:
+      - image: ghcr.io/airfocusio/trivy-gh-test-debian:11
+      - image: ghcr.io/airfocusio/trivy-gh-test-ubuntu:22.04

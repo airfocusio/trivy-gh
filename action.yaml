@@ -1,0 +1,12 @@
+name: 'Trivy GitHub'
+description: ''
+inputs:
+  args:
+    description: 'command line args'
+    required: false
+runs:
+  using: 'composite'
+  steps:
+    - uses: docker://ghcr.io/airfocusio/trivy-gh:latest
+      with:
+        args: ${{ inputs.args }}

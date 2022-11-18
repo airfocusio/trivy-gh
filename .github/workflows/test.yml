@@ -1,0 +1,35 @@
+name: Test
+on:
+  push:
+    branches:
+    - "*"
+  pull_request:
+    branches:
+    - main
+env:
+  GO111MODULE: on
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/setup-go@v2
+      with:
+        go-version: 1.17.x
+    - uses: actions/checkout@v3
+    - name: Log in to ghcr.io
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - run: go test -v ./...
+  test-action:
+    name: Test action
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - id: trivy-gh
+      uses: airfocusio/trivy-gh@main
+      with:
+        args: version

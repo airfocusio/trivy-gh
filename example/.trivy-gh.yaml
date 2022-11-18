@@ -1,0 +1,36 @@
+github:
+  token: ${GITHUB_TOKEN}
+  issueRepo: airfocusio/trivy-gh-test
+files:
+- ^/k8s/.*.yaml
+mitigations:
+- key: not-used
+  label: Package not used
+  allowManual: true
+- key: no-public-networking
+  label: No public networking
+  allowManual: true
+policies:
+- comment: |
+    Bash can only be executed from inside the container.
+  match:
+    pkgName: bash
+  action:
+    mitigate:
+    - not-used
+- comment: |
+    This container is purely internal.
+    So we can ignore it.
+  match:
+    artifactNameShort: ghcr.io/airfocusio/trivy-gh-test-debian
+    cvss:
+      av:
+      - N
+  action:
+    mitigate:
+    - no-public-networking
+- match:
+    cvss:
+      scoreLowerThan: 4
+  action:
+    ignore: true
