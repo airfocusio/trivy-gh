@@ -1,6 +1,9 @@
 name: 'Trivy GitHub'
 description: ''
 inputs:
+  github-token:
+    description: 'github token'
+    required: true
   args:
     description: 'command line args'
     required: false
@@ -8,5 +11,7 @@ runs:
   using: 'composite'
   steps:
     - uses: docker://ghcr.io/airfocusio/trivy-gh:latest
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
       with:
         args: ${{ inputs.args }}

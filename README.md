@@ -22,6 +22,6 @@ jobs:
     - uses: actions/checkout@v3
     - id: trivy-gh
       uses: airfocusio/trivy-gh-test@main
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
 ```

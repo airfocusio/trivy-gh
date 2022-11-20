@@ -32,4 +32,5 @@ jobs:
     - id: trivy-gh
       uses: airfocusio/trivy-gh@main
       with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         args: version
