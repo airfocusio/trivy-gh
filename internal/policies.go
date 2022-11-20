@@ -14,6 +14,11 @@ type PolicyMatcher interface {
 }
 
 func PolicyMatcherUnmarshalYAML(value *yaml.Node) (PolicyMatcher, error) {
+	id := IDPolicyMatcher{}
+	if err := id.UnmarshalYAML(value); err == nil {
+		return &id, nil
+	}
+
 	artifactNameShort := ArtifactNameShortPolicyMatcher{}
 	if err := artifactNameShort.UnmarshalYAML(value); err == nil {
 		return &artifactNameShort, nil
@@ -76,6 +81,33 @@ func (p *OrPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln ty
 		}
 	}
 	return false
+}
+
+var _ PolicyMatcher = (*IDPolicyMatcher)(nil)
+
+type IDPolicyMatcher struct {
+	ID []string `yaml:"id"`
+}
+
+func (p *IDPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
+	for _, id := range p.ID {
+		if id == vuln.VulnerabilityID {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *IDPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
+	type IDPolicyMatcher2 IDPolicyMatcher
+	err := value.Decode((*IDPolicyMatcher2)(c))
+	if err != nil {
+		return err
+	}
+	if len(c.ID) == 0 {
+		return fmt.Errorf("not a IDPolicyMatcher")
+	}
+	return nil
 }
 
 var _ PolicyMatcher = (*ArtifactNameShortPolicyMatcher)(nil)

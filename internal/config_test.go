@@ -78,6 +78,16 @@ func TestLoadConfig(t *testing.T) {
 					},
 					Ignore: true,
 				},
+				{
+					Match: &AndPolicyMatcher{
+						Inner: []PolicyMatcher{
+							&IDPolicyMatcher{
+								ID: []string{"CVE-0"},
+							},
+						},
+					},
+					Ignore: true,
+				},
 			},
 		}
 		assert.Equal(t, c2.Github, c1.Github)

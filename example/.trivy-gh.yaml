@@ -34,3 +34,7 @@ policies:
   - cvss:
       scoreLowerThan: 4
   ignore: true
+- matchers:
+  - id:
+    - CVE-0
+  ignore: true
