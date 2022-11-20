@@ -13,12 +13,12 @@ import (
 const TrivyBin = "trivy"
 
 func TrivyDownloadDb(ctx context.Context, dir string) error {
-	_, err := trivyCmd(ctx, dir, "image", "--download-db-only")
+	_, err := trivyCmd(ctx, dir, "-q", "image", "--download-db-only")
 	return err
 }
 
 func TrivyImage(ctx context.Context, dir string, image string) (*types.Report, error) {
-	out, err := trivyCmd(ctx, dir, "image", "--skip-db-update", "--security-checks", "vuln", "--format", "json", image)
+	out, err := trivyCmd(ctx, dir, "-q", "image", "--skip-db-update", "--security-checks", "vuln", "--format", "json", image)
 	if err != nil {
 		return nil, err
 	}
@@ -33,17 +33,9 @@ func TrivyImage(ctx context.Context, dir string, image string) (*types.Report, e
 func trivyCmd(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, TrivyBin, args...)
 	cmd.Dir = dir
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("trivy command %s failed: %w\n%s", strings.Join(args, " "), err, output)
 	}
 	return output, nil
-}
-
-func trivyCmdStr(ctx context.Context, dir string, args ...string) (string, error) {
-	output, err := trivyCmd(ctx, dir, args...)
-	if err != nil {
-		return "", err
-	}
-	return string(output), nil
 }
