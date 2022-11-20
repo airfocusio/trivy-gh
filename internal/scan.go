@@ -2,8 +2,10 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -440,17 +442,31 @@ func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln
 func (s *Scan) ScrapeFile(file string) ([]string, error) {
 	s.logger.Debug.Printf("Scraping file %s ...\n", file)
 
-	fileBytes, err := ioutil.ReadFile(file)
+	f, err := os.Open(file)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read file %s: %w", file, err)
 	}
-	var fileYaml interface{}
-	err = yaml.Unmarshal(fileBytes, &fileYaml)
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse file %s as yaml: %w", file, err)
+	defer f.Close()
+
+	result := []string{}
+	d := yaml.NewDecoder(f)
+	for {
+		fileYaml := new(interface{})
+		err := d.Decode(&fileYaml)
+		if fileYaml == nil {
+			continue
+		}
+		// break the loop in case of EOF
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse file %s as yaml: %w", file, err)
+		}
+		result = append(result, extractArtifactsFromRawYaml(*fileYaml)...)
 	}
 
-	return extractArtifactsFromRawYaml(fileYaml), nil
+	return result, nil
 }
 
 func (s *Scan) ScanArtifact(artifact string) (*types.Report, error) {
