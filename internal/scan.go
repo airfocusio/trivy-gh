@@ -228,7 +228,6 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 			State:  &state,
 		}
 
-		s.issuesCreated = s.issuesCreated + 1
 		if s.dry {
 			s.logger.Info.Printf("Skipped creating issue %q [dry run]\n", *issue.Title)
 			logDetails(s.logger.CloneNested().Info)
@@ -252,6 +251,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 					return nil, err
 				}
 			}
+			s.issuesCreated = s.issuesCreated + 1
 			return issueRes.Number, nil
 		}
 	} else {
@@ -307,7 +307,6 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 		}
 
 		if !compareGithubIssues(*existingIssue, issue) {
-			s.issuesUpdated = s.issuesUpdated + 1
 			if s.dry {
 				s.logger.Info.Printf("Skipped updating issue %q (#%d) [dry run]\n", *issue.Title, *existingIssue.Number)
 				logDetails(s.logger.CloneNested().Info)
@@ -323,6 +322,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 				}
 				s.logger.Info.Printf("Updated issue %q (#%d)\n", *issue.Title, *existingIssue.Number)
 				logDetails(s.logger.CloneNested().Info)
+				s.issuesUpdated = s.issuesUpdated + 1
 				return existingIssue.Number, nil
 			}
 		} else {
@@ -399,8 +399,8 @@ func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers 
 			}
 			issueNumbers = append(issueNumbers, *fixedIssue.Number)
 			s.logger.Info.Printf("Updated issue %q (#%d)\n", *fixedIssue.Title, *fixedIssue.Number)
+			s.issuesUpdated = s.issuesUpdated + 1
 		}
-		s.issuesUpdated = s.issuesUpdated + 1
 	}
 
 	return issueNumbers, nil
