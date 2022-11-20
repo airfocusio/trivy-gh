@@ -71,7 +71,7 @@ func TestLoadConfig(t *testing.T) {
 						Inner: []PolicyMatcher{
 							&CVSSPolicyMatcher{
 								CVSS: CVSSPolicyMatcherCVSS{
-									ScoreLowerThan: 4,
+									ScoreLowerThan: 8.5,
 								},
 							},
 						},

@@ -124,7 +124,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 
 	// prepare general data
 	id := fmt.Sprintf("%s/%s/%s", artifactNameShort, vuln.PkgName, vuln.VulnerabilityID)
-	idFooter := fmt.Sprintf("<!-- id=%s -->", id)
+	idFooter := fmt.Sprintf("<!-- trivy-gh-id=%s -->", id)
 	title := vuln.Title
 	if title == "" {
 		title = StringAbbreviate(vuln.Description, 40)
@@ -160,8 +160,8 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 	}
 
 	if len(policyBasedIgnores) > 0 {
-		logDetails(s.logger.CloneNested().Debug)
 		s.logger.Debug.Printf("Skipped creating/updating issue %q [ignored]\n", title)
+		logDetails(s.logger.CloneNested().Debug)
 		return nil, nil
 	}
 
@@ -255,7 +255,11 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 			return issueRes.Number, nil
 		}
 	} else {
-		existingIssueTasks := extractGithubIssueTasks(*existingIssue.Body)
+		existingIssueBody := ""
+		if existingIssue.Body != nil {
+			existingIssueBody = *existingIssue.Body
+		}
+		existingIssueTasks := extractGithubIssueTasks(existingIssueBody)
 		manualMitigationTasks := []ManualMitigationTask{}
 		for _, m := range s.config.Mitigations {
 			if !m.AllowManual {
@@ -366,16 +370,16 @@ func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers 
 		return nil, err
 	}
 	fixedIssues := []*github.Issue{}
-	for _, toBeClosedIssue := range openIssues {
-		touched := false
+	for _, openIssue := range openIssues {
+		unfixed := false
 		for _, n := range unfixedIssueNumbers {
-			if *toBeClosedIssue.Number == n {
-				touched = true
+			if *openIssue.Number == n {
+				unfixed = true
 				break
 			}
 		}
-		if !touched {
-			fixedIssues = append(fixedIssues, toBeClosedIssue)
+		if !unfixed && openIssue.Body != nil && strings.Contains(*openIssue.Body, "trivy-gh-id") {
+			fixedIssues = append(fixedIssues, openIssue)
 		}
 	}
 
