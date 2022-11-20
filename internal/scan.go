@@ -142,14 +142,8 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, reports []*types.Re
 				s.logger.Info.Printf("Title: %s\n", title)
 				s.logger.Info.Printf("Artifact: %s\n", report.ArtifactName)
 				s.logger.Info.Printf("Package: %s\n", vuln.PkgName)
-				s.logger.Info.Printf("Installed Version: %s\n", vuln.InstalledVersion)
-				s.logger.Info.Printf("Fixed Version: %s\n", vuln.FixedVersion)
-				s.logger.Info.Printf("Published: %s\n", vuln.PublishedDate)
 				if cvssVector != "" {
-					s.logger.Info.Printf("CVSS Vector: %s\n", cvssVector)
-				}
-				if cvssScore != 0 {
-					s.logger.Info.Printf("CVSS Score: %.1f\n", cvssScore)
+					s.logger.Info.Printf("CVSS: %s (%.1f)\n", cvssVector, cvssScore)
 				}
 				for _, m := range policyBasedMitigationTasks {
 					text := StringSanitize(m.Mitigation.Label)
