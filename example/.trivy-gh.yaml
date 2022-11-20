@@ -17,19 +17,16 @@ policies:
   - packageName:
     - sh
     - bash
-  mitigate:
-  - not-used
+  mitigate: not-used
 - comment: |
     This container is purely internal.
     So we can ignore it.
   matchers:
-  - artifactNameShort:
-    - ghcr.io/airfocusio/trivy-gh-test-debian
+  - artifactNameShort: ghcr.io/airfocusio/trivy-gh-test-debian
   - cvss:
       av:
       - N
-  mitigate:
-  - no-public-networking
+  mitigate: no-public-networking
 - matchers:
   - cvss:
       scoreLowerThan: 4

@@ -26,7 +26,7 @@ type ConfigPolicy struct {
 	Comment  string        `yaml:"comment"`
 	Match    PolicyMatcher `yaml:"matchers"`
 	Ignore   bool          `yaml:"ignore"`
-	Mitigate []string      `yaml:"mitigate"`
+	Mitigate StringArray   `yaml:"mitigate"`
 }
 
 func (c *ConfigPolicy) UnmarshalYAML(value *yaml.Node) error {
@@ -34,7 +34,7 @@ func (c *ConfigPolicy) UnmarshalYAML(value *yaml.Node) error {
 		Comment  string        `yaml:"comment"`
 		Match    []interface{} `yaml:"matchers"`
 		Ignore   bool          `yaml:"ignore"`
-		Mitigate []string      `yaml:"mitigate"`
+		Mitigate StringArray   `yaml:"mitigate"`
 	}
 	raw := rawConfigPolicy{}
 	err := value.Decode((*rawConfigPolicy)(&raw))
@@ -60,28 +60,10 @@ func (c *ConfigPolicy) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-type ConfigPolicyMatch struct {
-	ArtifactNameShort string                `yaml:"artifactNameShort"`
-	PackageName       string                `yaml:"packageName"`
-	CVSS              ConfigPolicyMatchCVSS `yaml:"cvss"`
-}
-
-type ConfigPolicyMatchCVSS struct {
-	ScoreLowerThan float64  `yaml:"scoreLowerThan"`
-	AV             []string `yaml:"av"`
-	AC             []string `yaml:"ac"`
-	PR             []string `yaml:"pr"`
-	UI             []string `yaml:"ui"`
-	S              []string `yaml:"s"`
-	C              []string `yaml:"c"`
-	I              []string `yaml:"i"`
-	A              []string `yaml:"a"`
-}
-
 func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	type rawConfig struct {
 		Github      ConfigGithub       `yaml:"github"`
-		Files       []string           `yaml:"files"`
+		Files       StringArray        `yaml:"files"`
 		Mitigations []ConfigMitigation `yaml:"mitigations"`
 		Policies    []ConfigPolicy     `yaml:"policies"`
 	}

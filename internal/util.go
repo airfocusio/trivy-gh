@@ -8,6 +8,7 @@ import (
 
 	trivydbtypes "github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/types"
+	"gopkg.in/yaml.v3"
 )
 
 func FileList(dir string, patterns []regexp.Regexp) ([]string, error) {
@@ -86,4 +87,22 @@ func FindVulnerabilityCVSSV3(vuln types.DetectedVulnerability) (string, float64)
 		}
 	}
 	return cvss.V3Vector, cvss.V3Score
+}
+
+type StringArray []string
+
+func (sa *StringArray) UnmarshalYAML(value *yaml.Node) error {
+	var multi []string
+	err := value.Decode(&multi)
+	if err != nil {
+		var single string
+		err := value.Decode(&single)
+		if err != nil {
+			return err
+		}
+		*sa = []string{single}
+	} else {
+		*sa = multi
+	}
+	return nil
 }

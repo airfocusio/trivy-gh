@@ -86,7 +86,7 @@ func (p *OrPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln ty
 var _ PolicyMatcher = (*IDPolicyMatcher)(nil)
 
 type IDPolicyMatcher struct {
-	ID []string `yaml:"id"`
+	ID StringArray `yaml:"id"`
 }
 
 func (p *IDPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
@@ -113,7 +113,7 @@ func (c *IDPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
 var _ PolicyMatcher = (*ArtifactNameShortPolicyMatcher)(nil)
 
 type ArtifactNameShortPolicyMatcher struct {
-	ArtifactNameShort []string `yaml:"artifactNameShort"`
+	ArtifactNameShort StringArray `yaml:"artifactNameShort"`
 }
 
 func (p *ArtifactNameShortPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
@@ -140,7 +140,7 @@ func (c *ArtifactNameShortPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
 var _ PolicyMatcher = (*PackageNamePolicyMatcher)(nil)
 
 type PackageNamePolicyMatcher struct {
-	PackageName []string `yaml:"packageName"`
+	PackageName StringArray `yaml:"packageName"`
 }
 
 func (p *PackageNamePolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
@@ -169,15 +169,15 @@ type CVSSPolicyMatcher struct {
 }
 
 type CVSSPolicyMatcherCVSS struct {
-	ScoreLowerThan float64  `yaml:"scoreLowerThan"`
-	AV             []string `yaml:"av"`
-	AC             []string `yaml:"ac"`
-	PR             []string `yaml:"pr"`
-	UI             []string `yaml:"ui"`
-	S              []string `yaml:"s"`
-	C              []string `yaml:"c"`
-	I              []string `yaml:"i"`
-	A              []string `yaml:"a"`
+	ScoreLowerThan float64     `yaml:"scoreLowerThan"`
+	AV             StringArray `yaml:"av"`
+	AC             StringArray `yaml:"ac"`
+	PR             StringArray `yaml:"pr"`
+	UI             StringArray `yaml:"ui"`
+	S              StringArray `yaml:"s"`
+	C              StringArray `yaml:"c"`
+	I              StringArray `yaml:"i"`
+	A              StringArray `yaml:"a"`
 }
 
 func (p *CVSSPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {

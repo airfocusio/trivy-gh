@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 )
 
 func TestFileList(t *testing.T) {
@@ -35,6 +36,35 @@ func TestFileList(t *testing.T) {
 			}, f)
 		}
 	})
+}
+
+func TestStringArrayUnmarshalYAML(t *testing.T) {
+	type test struct {
+		Value StringArray `yaml:"value"`
+	}
+
+	t1 := test{}
+	if err := yaml.Unmarshal([]byte("value: foo"), &t1); assert.NoError(t, err) {
+		assert.Equal(t, StringArray{"foo"}, t1.Value)
+	}
+
+	t2 := test{}
+	if err := yaml.Unmarshal([]byte("value:\n-  foo\n-  bar\n"), &t2); assert.NoError(t, err) {
+		assert.Equal(t, StringArray{"foo", "bar"}, t2.Value)
+	}
+
+	t3 := test{}
+	if err := yaml.Unmarshal([]byte("value: 1"), &t3); assert.NoError(t, err) {
+		assert.Equal(t, StringArray{"1"}, t3.Value)
+	}
+
+	t4 := test{}
+	if err := yaml.Unmarshal([]byte("value: true"), &t4); assert.NoError(t, err) {
+		assert.Equal(t, StringArray{"true"}, t4.Value)
+	}
+
+	t5 := test{}
+	assert.ErrorContains(t, yaml.Unmarshal([]byte("value:\n  foo: bar\n"), &t5), "cannot unmarshal !!map into string")
 }
 
 func temporarySetenv(name string, value string) func() {
