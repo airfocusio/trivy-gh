@@ -9,11 +9,12 @@ import (
 
 	trivydbtypes "github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/types"
-	"github.com/goark/go-cvss/v3/metric"
 	"github.com/google/go-github/v48/github"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 )
+
+var cvssSources = []trivydbtypes.SourceID{"nvd", "redhat"}
 
 type Scan struct {
 	logger           Logger
@@ -22,6 +23,8 @@ type Scan struct {
 	dry              bool
 	issueCreateLimit int
 	issueUpdateLimit int
+	issuesCreated    int
+	issuesUpdated    int
 	ctx              context.Context
 	githubClient     *github.Client
 }
@@ -55,26 +58,53 @@ func (s *Scan) Run() error {
 		return nil
 	}
 
-	artifacts := []string{}
+	artifacts := map[string][]string{}
 	for _, file := range files {
 		as, err := s.ScrapeFile(file)
 		if err != nil {
 			return err
 		}
-		artifacts = append(artifacts, as...)
+		for _, a := range as {
+			artifactNameShort := strings.SplitN(a, ":", 2)[0]
+			if _, ok := artifacts[artifactNameShort]; !ok {
+				artifacts[artifactNameShort] = []string{}
+			}
+			artifacts[artifactNameShort] = append(artifacts[artifactNameShort], a)
+		}
 	}
-	artifacts = StringsUnique(artifacts)
-	sort.Strings(artifacts)
+	for artifactNameShort := range artifacts {
+		artifacts[artifactNameShort] = StringsUnique(artifacts[artifactNameShort])
+		sort.Strings(artifacts[artifactNameShort])
+	}
 
-	issuesCreated := 0
-	issuesUpdated := 0
-	notToAutoCloseIssueNumbers := []int{}
-	for _, arti := range artifacts {
-		report, err := s.ScanArtifact(arti)
+	unfixedIssueNumbers := []int{}
+	for artifactNameShort, artifacts2 := range artifacts {
+		s.logger.Info.Printf("Processing artifact %s ...\n", artifactNameShort)
+		reports := []*types.Report{}
+		for _, arti := range artifacts2 {
+			report, err := s.ScanArtifact(arti)
+			if err != nil {
+				return err
+			}
+			reports = append(reports, report)
+		}
+		issueNumbers, err := s.ProcessUnfixedIssue(artifactNameShort, reports)
 		if err != nil {
 			return err
 		}
+		unfixedIssueNumbers = append(unfixedIssueNumbers, issueNumbers...)
+	}
 
+	if _, err := s.ProcessFixedIssues("", unfixedIssueNumbers); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, reports []*types.Report) ([]int, error) {
+	issueNumbers := []int{}
+	for _, report := range reports {
 		for _, res := range report.Results {
 		Vuln:
 			for _, vuln := range res.Vulnerabilities {
@@ -86,7 +116,6 @@ func (s *Scan) Run() error {
 						continue Vuln
 					}
 				}
-				artifactNameShort := strings.SplitN(report.ArtifactName, ":", 2)[0]
 				id := fmt.Sprintf("%s/%s/%s", artifactNameShort, vuln.PkgName, vuln.VulnerabilityID)
 				idFooter := fmt.Sprintf("<!-- id=%s -->", id)
 				policyBasedMitigationTasks := []PolicyBasedMitigationTask{}
@@ -110,17 +139,18 @@ func (s *Scan) Run() error {
 						})
 					}
 				}
+				title := vuln.Title
+				if title == "" {
+					title = StringAbbreviate(vuln.Description, 40)
+				}
+				if title == "" {
+					title = vuln.VulnerabilityID
+				}
 
 				// find existing issue
 				existingIssuesSearchLabels := []string{
 					vuln.VulnerabilityID,
 					artifactNameShort,
-				}
-				if s.config.Github.LabelPrefix != "" {
-					for i := range existingIssuesSearchLabels {
-						existingIssuesSearchLabels[i] = s.config.Github.LabelPrefix + ":" + existingIssuesSearchLabels[i]
-					}
-					existingIssuesSearchLabels = append(existingIssuesSearchLabels, s.config.Github.LabelPrefix)
 				}
 				existingIssuesSearchState := "all"
 				existingIssues, _, err := s.githubClient.Issues.ListByRepo(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &github.IssueListByRepoOptions{
@@ -131,13 +161,13 @@ func (s *Scan) Run() error {
 					},
 				})
 				if err != nil {
-					return err
+					return nil, err
 				}
 				var existingIssue *github.Issue
 				for _, ei := range existingIssues {
 					if ei.Body != nil && strings.Contains(*ei.Body, idFooter) {
 						existingIssue = ei
-						notToAutoCloseIssueNumbers = append(notToAutoCloseIssueNumbers, *ei.Number)
+						issueNumbers = append(issueNumbers, *ei.Number)
 						break
 					}
 				}
@@ -155,24 +185,11 @@ func (s *Scan) Run() error {
 					}
 
 					// create new issue
-					title := vuln.Title
-					if title == "" {
-						title = StringAbbreviate(vuln.Description, 40)
-					}
-					if title == "" {
-						title = vuln.VulnerabilityID
-					}
 					body := s.RenderGithubIssueBody(*report, res, vuln, manualMitigationTasks, policyBasedMitigationTasks, idFooter)
 					labels := []string{
 						vuln.VulnerabilityID,
 						artifactNameShort,
 						vuln.Severity,
-					}
-					if s.config.Github.LabelPrefix != "" {
-						for i := range labels {
-							labels[i] = s.config.Github.LabelPrefix + ":" + labels[i]
-						}
-						labels = append(labels, s.config.Github.LabelPrefix)
 					}
 					state := "open"
 					for _, p := range manualMitigationTasks {
@@ -196,25 +213,25 @@ func (s *Scan) Run() error {
 
 					if s.dry {
 						s.logger.Info.Printf("Skipped creating issue %s (dry run)\n", *issue.Title)
-					} else if s.issueCreateLimit >= 0 && issuesCreated >= s.issueCreateLimit {
+					} else if s.issueCreateLimit >= 0 && s.issuesCreated >= s.issueCreateLimit {
 						s.logger.Info.Printf("Skipped creating issue %s (limit exceeded)\n", *issue.Title)
 					} else {
 						issueRes, _, err := s.githubClient.Issues.Create(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &issue)
 						if err != nil {
-							return err
+							return nil, err
 						}
+						issueNumbers = append(issueNumbers, *issueRes.Number)
 						s.logger.Info.Printf("Created issue #%d %s\n", *issueRes.Number, *issue.Title)
-						notToAutoCloseIssueNumbers = append(notToAutoCloseIssueNumbers, *issueRes.Number)
 						if *issueRes.State != state {
 							_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *issueRes.Number, &github.IssueRequest{
 								State: &state,
 							})
 							if err != nil {
-								return err
+								return nil, err
 							}
 						}
 					}
-					issuesCreated = issuesCreated + 1
+					s.issuesCreated = s.issuesCreated + 1
 				} else {
 					existingIssueTasks := extractGithubIssueTasks(*existingIssue.Body)
 					manualMitigationTasks := []ManualMitigationTask{}
@@ -237,18 +254,11 @@ func (s *Scan) Run() error {
 					}
 
 					// update existing issue if needed
-					title := vuln.Title
 					body := s.RenderGithubIssueBody(*report, res, vuln, manualMitigationTasks, policyBasedMitigationTasks, idFooter)
 					labels := []string{
 						vuln.VulnerabilityID,
 						artifactNameShort,
 						vuln.Severity,
-					}
-					if s.config.Github.LabelPrefix != "" {
-						for i := range labels {
-							labels[i] = s.config.Github.LabelPrefix + ":" + labels[i]
-						}
-						labels = append(labels, s.config.Github.LabelPrefix)
 					}
 					state := "open"
 					for _, p := range manualMitigationTasks {
@@ -273,137 +283,89 @@ func (s *Scan) Run() error {
 					if !compareGithubIssues(*existingIssue, issue) {
 						if s.dry {
 							s.logger.Info.Printf("Skipped updating issue #%d %s (dry run)\n", *existingIssue.Number, *issue.Title)
-						} else if s.issueUpdateLimit >= 0 && issuesUpdated >= s.issueUpdateLimit {
+						} else if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
 							s.logger.Info.Printf("Skipped updating issue #%d %s (limit exceeded)\n", *existingIssue.Number, *issue.Title)
 						} else {
 							_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *existingIssue.Number, &issue)
 							if err != nil {
-								return err
+								return nil, err
 							}
 							s.logger.Info.Printf("Updated issue #%d %s\n", *existingIssue.Number, *issue.Title)
 						}
-						issuesUpdated = issuesUpdated + 1
+						s.issuesUpdated = s.issuesUpdated + 1
 					}
 				}
 			}
 		}
 	}
 
-	// find all open issue that have not been touched before
-	openIssuesSearchlabels := []string{}
-	if s.config.Github.LabelPrefix != "" {
-		openIssuesSearchlabels = append(openIssuesSearchlabels, s.config.Github.LabelPrefix)
+	return issueNumbers, nil
+}
+
+func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers []int) ([]int, error) {
+	issueNumbers := []int{}
+
+	// find all open issue that have not been seen unfixed
+	openIssuesSearchLabels := []string{}
+	if artifactNameShort != "" {
+		openIssuesSearchLabels = append(openIssuesSearchLabels, artifactNameShort)
 	}
 	openIssuesSearchState := "open"
 	openIssues, _, err := s.githubClient.Issues.ListByRepo(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &github.IssueListByRepoOptions{
-		Labels: openIssuesSearchlabels,
+		Labels: openIssuesSearchLabels,
 		State:  openIssuesSearchState,
 		ListOptions: github.ListOptions{
 			PerPage: 100,
 		},
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	toBeClosedIssues := []*github.Issue{}
+	fixedIssues := []*github.Issue{}
 	for _, toBeClosedIssue := range openIssues {
 		touched := false
-		for _, n := range notToAutoCloseIssueNumbers {
+		for _, n := range unfixedIssueNumbers {
 			if *toBeClosedIssue.Number == n {
 				touched = true
 				break
 			}
 		}
 		if !touched {
-			toBeClosedIssues = append(toBeClosedIssues, toBeClosedIssue)
+			fixedIssues = append(fixedIssues, toBeClosedIssue)
 		}
 	}
 
-	for _, toBeClosedIssue := range toBeClosedIssues {
+	for _, fixedIssue := range fixedIssues {
 		state := "closed"
 		issue := github.IssueRequest{
 			State: &state,
 		}
-		if !s.dry {
-			_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *toBeClosedIssue.Number, &issue)
-			if err != nil {
-				return err
-			}
-			s.logger.Info.Printf("Updated issue #%d %s\n", *toBeClosedIssue.Number, *toBeClosedIssue.Title)
+		if s.dry {
+			s.logger.Info.Printf("Skipped updating issue #%d %s (dry run)\n", *fixedIssue.Number, *fixedIssue.Title)
+		} else if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
+			s.logger.Info.Printf("Skipped updating issue #%d %s (limit exceeded)\n", *fixedIssue.Number, *fixedIssue.Title)
 		} else {
-			s.logger.Info.Printf("Skipped updating issue #%d %s\n", *toBeClosedIssue.Number, *toBeClosedIssue.Title)
+			_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *fixedIssue.Number, &issue)
+			if err != nil {
+				return nil, err
+			}
+			issueNumbers = append(issueNumbers, *fixedIssue.Number)
+			s.logger.Info.Printf("Updated issue #%d %s\n", *fixedIssue.Number, *fixedIssue.Title)
 		}
+		s.issuesUpdated = s.issuesUpdated + 1
 	}
 
-	return nil
+	return issueNumbers, nil
 }
 
 func (s *Scan) FindMatchingPolicies(report types.Report, res types.Result, vuln types.DetectedVulnerability) []ConfigPolicy {
 	result := []ConfigPolicy{}
-
 	for _, p := range s.config.Policies {
-		isMatch := true
-		if p.Match.ArtifactNameShort != "" && p.Match.ArtifactNameShort != strings.SplitN(report.ArtifactName, ":", 2)[0] {
-			isMatch = false
-		}
-		if p.Match.PkgName != "" && vuln.PkgName != p.Match.PkgName {
-			isMatch = false
-		}
-
-		cvssVector, cvssScore := s.FindVulnerabilityCVSSV3(vuln)
-		var cvssBaseMetric *metric.Base
-		if cvssVector != "" {
-			bm, err := metric.NewBase().Decode(cvssVector)
-			if err != nil {
-				s.logger.Warn.Printf("Unable to parse CVSS vector %s: %v", cvssVector, err)
-			} else if bm.Ver == metric.VUnknown {
-				s.logger.Warn.Printf("Unable to parse CVSS vector %s: %s", cvssVector, "unknown version")
-			} else {
-				cvssBaseMetric = bm
-			}
-		}
-		if p.Match.CVSS.ScoreLowerThan != 0 && cvssScore >= p.Match.CVSS.ScoreLowerThan {
-			isMatch = false
-		}
-		if len(p.Match.CVSS.AV) > 0 && (cvssBaseMetric == nil || !StringsContain(p.Match.CVSS.AV, cvssBaseMetric.AV.String())) {
-			isMatch = false
-		}
-		if len(p.Match.CVSS.AC) > 0 && (cvssBaseMetric == nil || !StringsContain(p.Match.CVSS.AC, cvssBaseMetric.AC.String())) {
-			isMatch = false
-		}
-		if len(p.Match.CVSS.PR) > 0 && (cvssBaseMetric == nil || !StringsContain(p.Match.CVSS.PR, cvssBaseMetric.PR.String())) {
-			isMatch = false
-		}
-		if len(p.Match.CVSS.S) > 0 && (cvssBaseMetric == nil || !StringsContain(p.Match.CVSS.S, cvssBaseMetric.S.String())) {
-			isMatch = false
-		}
-		if len(p.Match.CVSS.C) > 0 && (cvssBaseMetric == nil || !StringsContain(p.Match.CVSS.C, cvssBaseMetric.C.String())) {
-			isMatch = false
-		}
-		if len(p.Match.CVSS.I) > 0 && (cvssBaseMetric == nil || !StringsContain(p.Match.CVSS.I, cvssBaseMetric.I.String())) {
-			isMatch = false
-		}
-		if len(p.Match.CVSS.A) > 0 && (cvssBaseMetric == nil || !StringsContain(p.Match.CVSS.A, cvssBaseMetric.A.String())) {
-			isMatch = false
-		}
-
-		if isMatch {
+		if p.Match.IsMatch(report, res, vuln) {
 			result = append(result, p)
 		}
 	}
-
 	return result
-}
-
-func (s *Scan) FindVulnerabilityCVSSV3(vuln types.DetectedVulnerability) (string, float64) {
-	cvss := trivydbtypes.CVSS{}
-	for _, s := range s.config.CVSSSources {
-		if c, ok := vuln.CVSS[s]; ok {
-			cvss = c
-			break
-		}
-	}
-	return cvss.V3Vector, cvss.V3Score
 }
 
 type RenderGithubIssueBodyOpts struct {
@@ -428,7 +390,7 @@ type PolicyBasedMitigationTask struct {
 }
 
 func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln types.DetectedVulnerability, manualMitigationTasks []ManualMitigationTask, policyBasedMitigationTasks []PolicyBasedMitigationTask, footer string) string {
-	cvssVector, cvssScore := s.FindVulnerabilityCVSSV3(vuln)
+	cvssVector, cvssScore := FindVulnerabilityCVSSV3(vuln)
 
 	table := StringSanitize(fmt.Sprintf(`
 | Key | Value

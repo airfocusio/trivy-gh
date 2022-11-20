@@ -1,17 +1,21 @@
 package internal
 
 import (
+	"fmt"
+	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	trivydbtypes "github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/types"
+	"github.com/google/go-github/v48/github"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestScanScrapeFile(t *testing.T) {
-	os.Setenv("GITHUB_TOKEN", "token")
 	scan := NewScan(NewNullLogger(), Config{}, "../example", true, 0, 0)
 
 	f1, e1 := scan.ScrapeFile("../example/k8s/deployment1.yaml")
@@ -24,188 +28,21 @@ func TestScanScrapeFile(t *testing.T) {
 }
 
 func TestFindMatchingPolicies(t *testing.T) {
-	os.Setenv("GITHUB_TOKEN", "token")
-
 	t.Run("MatchAll", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: ConfigPolicyMatch{}}
+		p1 := ConfigPolicy{Match: &YesPolicyMatcher{}}
 		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
+			Policies: []ConfigPolicy{p1},
 		}, "../example", true, 0, 0)
 
 		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
 	})
-
-	t.Run("MatchArtifactNameShort", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: ConfigPolicyMatch{ArtifactNameShort: "ghcr.io/airfocusio/trivy-gh-test-debian"}}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
-		}, "../example", true, 0, 0)
-
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-debian:11"}, types.Result{}, types.DetectedVulnerability{}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-ubuntu:22.04"}, types.Result{}, types.DetectedVulnerability{}))
-	})
-
-	t.Run("MatchPkgName", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: ConfigPolicyMatch{PkgName: "apt"}}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
-		}, "../example", true, 0, 0)
-
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{PkgName: "apt"}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{PkgName: "sh"}))
-	})
-
-	t.Run("MatchCVSSScoreLowerThan", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: ConfigPolicyMatch{CVSS: ConfigPolicyMatchCVSS{ScoreLowerThan: 5}}}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
-		}, "../example", true, 0, 0)
-
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Score: 4.9}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Score: 5}}}}))
-	})
-
-	t.Run("MatchCVSSAV", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: ConfigPolicyMatch{CVSS: ConfigPolicyMatchCVSS{AV: []string{"N", "A"}}}}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
-		}, "../example", true, 0, 0)
-
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:A/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "MALFORMED"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{}}}}))
-	})
-
-	t.Run("MatchCVSSAC", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: ConfigPolicyMatch{CVSS: ConfigPolicyMatchCVSS{AC: []string{"H"}}}}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
-		}, "../example", true, 0, 0)
-
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:A/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "MALFORMED"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{}}}}))
-	})
-
-	t.Run("MatchCVSSPR", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: ConfigPolicyMatch{CVSS: ConfigPolicyMatchCVSS{PR: []string{"H"}}}}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
-		}, "../example", true, 0, 0)
-
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:N/S:U/C:N/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:A/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "MALFORMED"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{}}}}))
-	})
-
-	t.Run("MatchCVSSS", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: ConfigPolicyMatch{CVSS: ConfigPolicyMatchCVSS{S: []string{"C"}}}}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
-		}, "../example", true, 0, 0)
-
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:A/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "MALFORMED"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{}}}}))
-	})
-
-	t.Run("MatchCVSC", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: ConfigPolicyMatch{CVSS: ConfigPolicyMatchCVSS{C: []string{"H"}}}}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
-		}, "../example", true, 0, 0)
-
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:N/S:C/C:H/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:A/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "MALFORMED"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{}}}}))
-	})
-
-	t.Run("MatchCVSI", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: ConfigPolicyMatch{CVSS: ConfigPolicyMatchCVSS{I: []string{"H"}}}}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
-		}, "../example", true, 0, 0)
-
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:H/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:A/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "MALFORMED"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{}}}}))
-	})
-
-	t.Run("MatchCVSA", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: ConfigPolicyMatch{CVSS: ConfigPolicyMatchCVSS{A: []string{"H"}}}}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
-		}, "../example", true, 0, 0)
-
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:N/A:H"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:A/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "MALFORMED"}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{}}}}))
-	})
-
-	t.Run("MatchCombinations", func(t *testing.T) {
-		p1 := ConfigPolicy{
-			Match: ConfigPolicyMatch{
-				ArtifactNameShort: "ghcr.io/airfocusio/trivy-gh-test-debian",
-				PkgName:           "apt",
-				CVSS:              ConfigPolicyMatchCVSS{ScoreLowerThan: 5},
-			},
-		}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
-		}, "../example", true, 0, 0)
-
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-debian:11"}, types.Result{}, types.DetectedVulnerability{PkgName: "apt", Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Score: 4.9}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-ubuntu:22.04"}, types.Result{}, types.DetectedVulnerability{PkgName: "apt", Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Score: 4.9}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-debian:11"}, types.Result{}, types.DetectedVulnerability{PkgName: "sh", Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Score: 4.9}}}}))
-		assert.Equal(t, []ConfigPolicy{}, scan.FindMatchingPolicies(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-debian:11"}, types.Result{}, types.DetectedVulnerability{PkgName: "apt", Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Score: 5}}}}))
-	})
-
-	t.Run("MatchMultiple", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: ConfigPolicyMatch{ArtifactNameShort: "ghcr.io/airfocusio/trivy-gh-test-debian"}}
-		p2 := ConfigPolicy{Match: ConfigPolicyMatch{PkgName: "apt"}}
-		p3 := ConfigPolicy{Match: ConfigPolicyMatch{CVSS: ConfigPolicyMatchCVSS{ScoreLowerThan: 5}}}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies:    []ConfigPolicy{p1, p2, p3},
-			CVSSSources: []trivydbtypes.SourceID{"nvd"},
-		}, "../example", true, 0, 0)
-
-		assert.Equal(t, []ConfigPolicy{p1, p2, p3}, scan.FindMatchingPolicies(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-debian:11"}, types.Result{}, types.DetectedVulnerability{PkgName: "apt", Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Score: 4.9}}}}))
-		assert.Equal(t, []ConfigPolicy{p2, p3}, scan.FindMatchingPolicies(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-ubuntu:22.04"}, types.Result{}, types.DetectedVulnerability{PkgName: "apt", Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Score: 4.9}}}}))
-		assert.Equal(t, []ConfigPolicy{p1, p3}, scan.FindMatchingPolicies(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-debian:11"}, types.Result{}, types.DetectedVulnerability{PkgName: "sh", Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Score: 4.9}}}}))
-		assert.Equal(t, []ConfigPolicy{p1, p2}, scan.FindMatchingPolicies(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-debian:11"}, types.Result{}, types.DetectedVulnerability{PkgName: "apt", Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Score: 5}}}}))
-	})
 }
 
 func TestRenderGithubIssueBody(t *testing.T) {
-	os.Setenv("GITHUB_TOKEN", "token")
-	scan := NewScan(NewNullLogger(), Config{CVSSSources: []trivydbtypes.SourceID{"nvd"}}, "../example", true, 0, 0)
+	resetGithubToken := temporarySetenv("GITHUB_TOKEN", "token")
+	defer resetGithubToken()
+
+	scan := NewScan(NewNullLogger(), Config{}, "../example", true, 0, 0)
 
 	assert.Equal(t, strings.Trim(`
 | Key | Value
@@ -266,4 +103,150 @@ https://domain.com/path2
 		{Done: true, Mitigation: ConfigMitigation{Key: "k5", Label: "Label 5"}, Policy: ConfigPolicy{Comment: "Comment 2"}},
 		{Done: true, Mitigation: ConfigMitigation{Key: "k5", Label: "Label 5"}, Policy: ConfigPolicy{Comment: "Comment 3a\nComment 3b\n"}},
 	}, "<!-- id=abc123 -->"))
+}
+
+func TestScan(t *testing.T) {
+	githubToken := os.Getenv("GITHUB_TOKEN")
+	if githubToken == "" {
+		t.SkipNow()
+	}
+
+	rand.Seed(time.Now().Unix())
+	artifactNameShort := "test-artifact-" + strconv.Itoa(rand.Int())
+	artifactName := artifactNameShort + ":1.0.0"
+	packageName := "test-package-" + strconv.Itoa(rand.Int())
+	vulnerabilityId := "TEST-" + strconv.Itoa(rand.Int())
+	mitigationKey := "too-unimportant-" + strconv.Itoa(rand.Int())
+
+	scan := NewScan(NewNullLogger(), Config{
+		Github: ConfigGithub{
+			Token:          githubToken,
+			IssueRepoOwner: "airfocusio",
+			IssueRepoName:  "trivy-gh-test",
+		},
+		Mitigations: []ConfigMitigation{
+			{
+				Key:   mitigationKey,
+				Label: "Too unimportant",
+			},
+		},
+		Policies: []ConfigPolicy{
+			{
+				Match: &CVSSPolicyMatcher{
+					CVSS: CVSSPolicyMatcherCVSS{
+						ScoreLowerThan: 4,
+					},
+				},
+				Action: ConfigPolicyAction{
+					Mitigate: []string{mitigationKey},
+				},
+			},
+		},
+	}, "../example", false, 10, 10)
+
+	report1 := types.Report{
+		ArtifactName: artifactName,
+		Results: types.Results{
+			{
+				Vulnerabilities: []types.DetectedVulnerability{
+					{
+						VulnerabilityID: vulnerabilityId,
+						PkgName:         packageName,
+						Vulnerability: trivydbtypes.Vulnerability{
+							Title:       "Test title",
+							Description: "Test description",
+							Severity:    "HIGH",
+							CVSS: trivydbtypes.VendorCVSS{
+								"nvd": trivydbtypes.CVSS{
+									V3Score:  7.8,
+									V3Vector: "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H",
+								},
+							},
+							References: []string{"https://domain.com"},
+						},
+					},
+				},
+			},
+		},
+	}
+	report2 := types.Report{
+		ArtifactName: artifactName,
+		Results: types.Results{
+			{
+				Vulnerabilities: []types.DetectedVulnerability{
+					{
+						VulnerabilityID: vulnerabilityId,
+						PkgName:         packageName,
+						Vulnerability: trivydbtypes.Vulnerability{
+							Title:       "Test title",
+							Description: "Test description",
+							Severity:    "LOW",
+							CVSS: trivydbtypes.VendorCVSS{
+								"nvd": trivydbtypes.CVSS{
+									V3Score:  0.1,
+									V3Vector: "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:N",
+								},
+							},
+							References: []string{"https://domain.com"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// create
+	issueNumbers1, err := scan.ProcessUnfixedIssue(artifactNameShort, []*types.Report{&report1})
+	assert.NoError(t, err)
+	assert.Len(t, issueNumbers1, 1)
+	issueNumber := issueNumbers1[0]
+	defer func() {
+		closed := "closed"
+		scan.githubClient.Issues.Edit(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber, &github.IssueRequest{
+			State: &closed,
+		})
+	}()
+
+	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
+		assert.NoError(t, err)
+		assert.Contains(t, *issue.Body, fmt.Sprintf("id=%s/%s/%s", artifactNameShort, packageName, vulnerabilityId))
+		assert.Equal(t, "open", *issue.State)
+	}
+
+	// not close as it is not yet fixed
+	issueNumbers2, err := scan.ProcessFixedIssues(artifactNameShort, []int{issueNumber})
+	assert.NoError(t, err)
+	assert.Empty(t, issueNumbers2)
+	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
+		assert.NoError(t, err)
+		assert.Equal(t, "open", *issue.State)
+	}
+
+	// close as it is fixed
+	issueNumbers3, err := scan.ProcessFixedIssues(artifactNameShort, []int{})
+	assert.NoError(t, err)
+	assert.Equal(t, []int{issueNumber}, issueNumbers3)
+	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
+		assert.NoError(t, err)
+		assert.Equal(t, "closed", *issue.State)
+	}
+
+	// reopen as it has come back
+	issueNumbers4, err := scan.ProcessUnfixedIssue(artifactNameShort, []*types.Report{&report1})
+	assert.NoError(t, err)
+	assert.Equal(t, []int{issueNumber}, issueNumbers4)
+	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
+		assert.NoError(t, err)
+		assert.Equal(t, "open", *issue.State)
+	}
+
+	// close again as it is mitigated by policy
+	issueNumbers, err := scan.ProcessUnfixedIssue(artifactNameShort, []*types.Report{&report2})
+	assert.NoError(t, err)
+	assert.Equal(t, []int{issueNumber}, issueNumbers)
+	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
+		assert.NoError(t, err)
+		assert.Equal(t, "closed", *issue.State)
+		assert.Contains(t, *issue.Body, fmt.Sprintf("policy-based-mitigation=%s", mitigationKey))
+	}
 }

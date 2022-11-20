@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	trivydbtypes "github.com/aquasecurity/trivy-db/pkg/types"
+	"github.com/aquasecurity/trivy/pkg/types"
 )
 
 func FileList(dir string, patterns []regexp.Regexp) ([]string, error) {
@@ -72,4 +75,15 @@ func StringAbbreviate(str string, maxLength int) string {
 		return str
 	}
 	return str[0:maxLength] + "..."
+}
+
+func FindVulnerabilityCVSSV3(vuln types.DetectedVulnerability) (string, float64) {
+	cvss := trivydbtypes.CVSS{}
+	for _, s := range cvssSources {
+		if c, ok := vuln.CVSS[s]; ok {
+			cvss = c
+			break
+		}
+	}
+	return cvss.V3Vector, cvss.V3Score
 }

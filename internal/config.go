@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/airfocusio/go-expandenv"
-	"github.com/aquasecurity/trivy-db/pkg/types"
 	"gopkg.in/yaml.v3"
 )
 
@@ -15,7 +14,6 @@ type Config struct {
 	Files       []regexp.Regexp
 	Mitigations []ConfigMitigation
 	Policies    []ConfigPolicy
-	CVSSSources []types.SourceID
 }
 
 type ConfigMitigation struct {
@@ -26,13 +24,42 @@ type ConfigMitigation struct {
 
 type ConfigPolicy struct {
 	Comment string             `yaml:"comment"`
-	Match   ConfigPolicyMatch  `yaml:"match"`
-	Action  ConfigPolicyAction `yaml:"action"`
+	Match   PolicyMatcher      `yaml:"matchers"`
+	Action  ConfigPolicyAction `yaml:"actions"`
+}
+
+func (c *ConfigPolicy) UnmarshalYAML(value *yaml.Node) error {
+	type rawConfigPolicy struct {
+		Comment string             `yaml:"comment"`
+		Match   []interface{}      `yaml:"matchers"`
+		Action  ConfigPolicyAction `yaml:"actions"`
+	}
+	raw := rawConfigPolicy{}
+	err := value.Decode((*rawConfigPolicy)(&raw))
+	if err != nil {
+		return err
+	}
+	c.Comment = raw.Comment
+	matchers := []PolicyMatcher{}
+	for _, r := range raw.Match {
+		node := yaml.Node{}
+		if err := node.Encode(r); err != nil {
+			return err
+		}
+		if pm, err := PolicyMatcherUnmarshalYAML(&node); err != nil {
+			return err
+		} else {
+			matchers = append(matchers, pm)
+		}
+	}
+	c.Match = &AndPolicyMatcher{Inner: matchers}
+	c.Action = raw.Action
+	return nil
 }
 
 type ConfigPolicyMatch struct {
 	ArtifactNameShort string                `yaml:"artifactNameShort"`
-	PkgName           string                `yaml:"pkgName"`
+	PackageName       string                `yaml:"packageName"`
 	CVSS              ConfigPolicyMatchCVSS `yaml:"cvss"`
 }
 
@@ -59,7 +86,6 @@ func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 		Files       []string           `yaml:"files"`
 		Mitigations []ConfigMitigation `yaml:"mitigations"`
 		Policies    []ConfigPolicy     `yaml:"policies"`
-		CVSSSources []string           `yaml:"cvssSources"`
 	}
 	raw := rawConfig{}
 	err := value.Decode((*rawConfig)(&raw))
@@ -81,15 +107,6 @@ func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	}
 	c.Mitigations = raw.Mitigations
 	c.Policies = raw.Policies
-	if len(raw.CVSSSources) > 0 {
-		cvssSources := []types.SourceID{}
-		for _, p := range raw.CVSSSources {
-			cvssSources = append(cvssSources, types.SourceID(p))
-		}
-		c.CVSSSources = cvssSources
-	} else {
-		c.CVSSSources = []types.SourceID{"nvd", "redhat"}
-	}
 	return nil
 }
 
@@ -97,7 +114,6 @@ type ConfigGithub struct {
 	Token          string
 	IssueRepoOwner string
 	IssueRepoName  string
-	LabelPrefix    string
 }
 
 func (c *ConfigGithub) UnmarshalYAML(value *yaml.Node) error {
@@ -119,7 +135,6 @@ func (c *ConfigGithub) UnmarshalYAML(value *yaml.Node) error {
 	}
 	c.IssueRepoOwner = githubIssueRepoSegments[0]
 	c.IssueRepoName = githubIssueRepoSegments[1]
-	c.LabelPrefix = raw.LabelPrefix
 	return nil
 }
 

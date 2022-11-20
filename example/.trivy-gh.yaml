@@ -12,25 +12,28 @@ mitigations:
   allowManual: true
 policies:
 - comment: |
-    Bash can only be executed from inside the container.
-  match:
-    pkgName: bash
-  action:
+    can only be executed from inside the container.
+  matchers:
+  - packageName:
+    - sh
+    - bash
+  actions:
     mitigate:
     - not-used
 - comment: |
     This container is purely internal.
     So we can ignore it.
-  match:
-    artifactNameShort: ghcr.io/airfocusio/trivy-gh-test-debian
-    cvss:
+  matchers:
+  - artifactNameShort:
+    - ghcr.io/airfocusio/trivy-gh-test-debian
+  - cvss:
       av:
       - N
-  action:
+  actions:
     mitigate:
     - no-public-networking
-- match:
-    cvss:
+- matchers:
+  - cvss:
       scoreLowerThan: 4
-  action:
+  actions:
     ignore: true

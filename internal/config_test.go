@@ -5,15 +5,16 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestLoadConfig(t *testing.T) {
+	resetGithubToken := temporarySetenv("GITHUB_TOKEN", "token")
+	defer resetGithubToken()
+
 	bytes, err := os.ReadFile("../example/.trivy-gh.yaml")
 	assert.NoError(t, err)
 
-	os.Setenv("GITHUB_TOKEN", "token")
 	c1, err := LoadConfig(bytes)
 	if assert.NoError(t, err) {
 		c2 := &Config{
@@ -21,7 +22,6 @@ func TestLoadConfig(t *testing.T) {
 				Token:          "token",
 				IssueRepoOwner: "airfocusio",
 				IssueRepoName:  "trivy-gh-test",
-				LabelPrefix:    "",
 			},
 			Files: []regexp.Regexp{
 				*regexp.MustCompile("^/k8s/.*.yaml"),
@@ -40,9 +40,13 @@ func TestLoadConfig(t *testing.T) {
 			},
 			Policies: []ConfigPolicy{
 				{
-					Comment: "Bash can only be executed from inside the container.\n",
-					Match: ConfigPolicyMatch{
-						PkgName: "bash",
+					Comment: "can only be executed from inside the container.\n",
+					Match: &AndPolicyMatcher{
+						Inner: []PolicyMatcher{
+							&PackageNamePolicyMatcher{
+								PackageName: []string{"sh", "bash"},
+							},
+						},
 					},
 					Action: ConfigPolicyAction{
 						Mitigate: []string{"not-used"},
@@ -50,10 +54,16 @@ func TestLoadConfig(t *testing.T) {
 				},
 				{
 					Comment: "This container is purely internal.\nSo we can ignore it.\n",
-					Match: ConfigPolicyMatch{
-						ArtifactNameShort: "ghcr.io/airfocusio/trivy-gh-test-debian",
-						CVSS: ConfigPolicyMatchCVSS{
-							AV: []string{"N"},
+					Match: &AndPolicyMatcher{
+						Inner: []PolicyMatcher{
+							&ArtifactNameShortPolicyMatcher{
+								ArtifactNameShort: []string{"ghcr.io/airfocusio/trivy-gh-test-debian"},
+							},
+							&CVSSPolicyMatcher{
+								CVSS: CVSSPolicyMatcherCVSS{
+									AV: []string{"N"},
+								},
+							},
 						},
 					},
 					Action: ConfigPolicyAction{
@@ -61,19 +71,23 @@ func TestLoadConfig(t *testing.T) {
 					},
 				},
 				{
-					Match: ConfigPolicyMatch{
-						CVSS: ConfigPolicyMatchCVSS{ScoreLowerThan: 4},
+					Match: &AndPolicyMatcher{
+						Inner: []PolicyMatcher{
+							&CVSSPolicyMatcher{
+								CVSS: CVSSPolicyMatcherCVSS{
+									ScoreLowerThan: 4,
+								},
+							},
+						},
 					},
 					Action: ConfigPolicyAction{
 						Ignore: true,
 					},
 				},
 			},
-			CVSSSources: []types.SourceID{"nvd", "redhat"},
 		}
 		assert.Equal(t, c2.Github, c1.Github)
 		assert.Equal(t, c2.Files, c1.Files)
 		assert.Equal(t, c2.Policies, c1.Policies)
-		assert.Equal(t, c2.CVSSSources, c1.CVSSSources)
 	}
 }

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"os"
 	"regexp"
 	"testing"
 
@@ -34,4 +35,12 @@ func TestFileList(t *testing.T) {
 			}, f)
 		}
 	})
+}
+
+func temporarySetenv(name string, value string) func() {
+	originalValue := os.Getenv(name)
+	os.Setenv(name, value)
+	return func() {
+		os.Setenv(name, originalValue)
+	}
 }
