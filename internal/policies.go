@@ -34,7 +34,11 @@ func PolicyMatcherUnmarshalYAML(value *yaml.Node) (PolicyMatcher, error) {
 		return &cvss, nil
 	}
 
-	return nil, fmt.Errorf("matcher invalid")
+	str, err := yaml.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return nil, fmt.Errorf("unable to unmarshall matcher `%s`", strings.ReplaceAll(string(str), "\n", "\\n"))
 }
 
 var _ PolicyMatcher = (*YesPolicyMatcher)(nil)
