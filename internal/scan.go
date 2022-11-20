@@ -112,16 +112,17 @@ func (s *Scan) Run() error {
 }
 
 func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report, res types.Result, vuln types.DetectedVulnerability) (*int, error) {
-	// prepare general data
+	// prepare policies
 	matchingPolicies := s.EvaluateMatchingPolicies(report, res, vuln)
 	policyBasedMitigationTasks := s.EvaluatePolicyBasedMitigationTasks(matchingPolicies)
-	ignore := false
+	policyBasedIgnores := []ConfigPolicy{}
 	for _, p := range matchingPolicies {
 		if p.Ignore {
-			ignore = true
-			break
+			policyBasedIgnores = append(policyBasedIgnores, p)
 		}
 	}
+
+	// prepare general data
 	id := fmt.Sprintf("%s/%s/%s", artifactNameShort, vuln.PkgName, vuln.VulnerabilityID)
 	idFooter := fmt.Sprintf("<!-- id=%s -->", id)
 	title := vuln.Title
@@ -148,8 +149,13 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 			}
 			logger.Printf("Mitigation: %s\n", text)
 		}
-		if ignore {
-			logger.Printf("Ignores: yes\n")
+		for _, p := range policyBasedIgnores {
+			if p.Comment == "" {
+				logger.Printf("Ignored\n")
+			} else {
+				text := StringSanitize(p.Comment)
+				logger.Printf("Ignored: %s\n", text)
+			}
 		}
 	}
 
@@ -216,7 +222,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 			State:  &state,
 		}
 
-		if ignore {
+		if len(policyBasedIgnores) > 0 {
 			logDetails(s.logger.CloneNested().Debug)
 			s.logger.Debug.Printf("Skipped creating issue %s (ignore)\n", *issue.Title)
 			return nil, nil
@@ -296,7 +302,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 		}
 
 		if !compareGithubIssues(*existingIssue, issue) {
-			if ignore {
+			if len(policyBasedIgnores) > 0 {
 				s.logger.Debug.Printf("Skipped updating issue #%d %s (ignore)\n", *existingIssue.Number, *issue.Title)
 				logDetails(s.logger.CloneNested().Debug)
 				return nil, nil
