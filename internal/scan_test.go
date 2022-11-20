@@ -137,9 +137,7 @@ func TestScan(t *testing.T) {
 						ScoreLowerThan: 4,
 					},
 				},
-				Action: ConfigPolicyAction{
-					Mitigate: []string{mitigationKey},
-				},
+				Mitigate: []string{mitigationKey},
 			},
 		},
 	}, "../example", false, 10, 10)

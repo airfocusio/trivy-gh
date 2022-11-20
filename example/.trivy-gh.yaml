@@ -17,9 +17,8 @@ policies:
   - packageName:
     - sh
     - bash
-  actions:
-    mitigate:
-    - not-used
+  mitigate:
+  - not-used
 - comment: |
     This container is purely internal.
     So we can ignore it.
@@ -29,11 +28,9 @@ policies:
   - cvss:
       av:
       - N
-  actions:
-    mitigate:
-    - no-public-networking
+  mitigate:
+  - no-public-networking
 - matchers:
   - cvss:
       scoreLowerThan: 4
-  actions:
-    ignore: true
+  ignore: true

@@ -120,7 +120,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, reports []*types.Re
 				matchingPolicies := s.EvaluateMatchingPolicies(*report, res, vuln)
 				policyBasedMitigationTasks := s.EvaluatePolicyBasedMitigationTasks(matchingPolicies)
 				for _, p := range matchingPolicies {
-					if p.Action.Ignore {
+					if p.Ignore {
 						s.logger.Debug.Printf("Ignoring %s %s %s\n", report.ArtifactName, vuln.PkgName, vuln.VulnerabilityID)
 						continue Vuln
 					}
@@ -378,7 +378,7 @@ func (s *Scan) EvaluateMatchingPolicies(report types.Report, res types.Result, v
 func (s *Scan) EvaluatePolicyBasedMitigationTasks(matchingPolicies []ConfigPolicy) []PolicyBasedMitigationTask {
 	result := []PolicyBasedMitigationTask{}
 	for _, p := range matchingPolicies {
-		for _, key := range p.Action.Mitigate {
+		for _, key := range p.Mitigate {
 			var mitigation *ConfigMitigation
 			for _, m := range s.config.Mitigations {
 				if m.Key == key {

@@ -48,9 +48,7 @@ func TestLoadConfig(t *testing.T) {
 							},
 						},
 					},
-					Action: ConfigPolicyAction{
-						Mitigate: []string{"not-used"},
-					},
+					Mitigate: []string{"not-used"},
 				},
 				{
 					Comment: "This container is purely internal.\nSo we can ignore it.\n",
@@ -66,9 +64,7 @@ func TestLoadConfig(t *testing.T) {
 							},
 						},
 					},
-					Action: ConfigPolicyAction{
-						Mitigate: []string{"no-public-networking"},
-					},
+					Mitigate: []string{"no-public-networking"},
 				},
 				{
 					Match: &AndPolicyMatcher{
@@ -80,9 +76,7 @@ func TestLoadConfig(t *testing.T) {
 							},
 						},
 					},
-					Action: ConfigPolicyAction{
-						Ignore: true,
-					},
+					Ignore: true,
 				},
 			},
 		}

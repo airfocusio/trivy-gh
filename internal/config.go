@@ -23,16 +23,18 @@ type ConfigMitigation struct {
 }
 
 type ConfigPolicy struct {
-	Comment string             `yaml:"comment"`
-	Match   PolicyMatcher      `yaml:"matchers"`
-	Action  ConfigPolicyAction `yaml:"actions"`
+	Comment  string        `yaml:"comment"`
+	Match    PolicyMatcher `yaml:"matchers"`
+	Ignore   bool          `yaml:"ignore"`
+	Mitigate []string      `yaml:"mitigate"`
 }
 
 func (c *ConfigPolicy) UnmarshalYAML(value *yaml.Node) error {
 	type rawConfigPolicy struct {
-		Comment string             `yaml:"comment"`
-		Match   []interface{}      `yaml:"matchers"`
-		Action  ConfigPolicyAction `yaml:"actions"`
+		Comment  string        `yaml:"comment"`
+		Match    []interface{} `yaml:"matchers"`
+		Ignore   bool          `yaml:"ignore"`
+		Mitigate []string      `yaml:"mitigate"`
 	}
 	raw := rawConfigPolicy{}
 	err := value.Decode((*rawConfigPolicy)(&raw))
@@ -53,7 +55,8 @@ func (c *ConfigPolicy) UnmarshalYAML(value *yaml.Node) error {
 		}
 	}
 	c.Match = &AndPolicyMatcher{Inner: matchers}
-	c.Action = raw.Action
+	c.Ignore = raw.Ignore
+	c.Mitigate = raw.Mitigate
 	return nil
 }
 
@@ -73,11 +76,6 @@ type ConfigPolicyMatchCVSS struct {
 	C              []string `yaml:"c"`
 	I              []string `yaml:"i"`
 	A              []string `yaml:"a"`
-}
-
-type ConfigPolicyAction struct {
-	Ignore   bool     `yaml:"ignore"`
-	Mitigate []string `yaml:"mitigate"`
 }
 
 func (c *Config) UnmarshalYAML(value *yaml.Node) error {
