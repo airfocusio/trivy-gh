@@ -12,7 +12,7 @@ mitigations:
   allowManual: true
 policies:
 - comment: |
-    can only be executed from inside the container.
+    Can only be executed from inside the container.
   matchers:
   - packageName:
     - sh

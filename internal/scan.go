@@ -60,7 +60,7 @@ func (s *Scan) Run() error {
 		return nil
 	}
 
-	artifacts := map[string][]string{}
+	artifactGroups := map[string][]string{}
 	for _, file := range files {
 		as, err := s.ScrapeFile(file)
 		if err != nil {
@@ -68,33 +68,39 @@ func (s *Scan) Run() error {
 		}
 		for _, a := range as {
 			artifactNameShort := strings.SplitN(a, ":", 2)[0]
-			if _, ok := artifacts[artifactNameShort]; !ok {
-				artifacts[artifactNameShort] = []string{}
+			if _, ok := artifactGroups[artifactNameShort]; !ok {
+				artifactGroups[artifactNameShort] = []string{}
 			}
-			artifacts[artifactNameShort] = append(artifacts[artifactNameShort], a)
+			artifactGroups[artifactNameShort] = append(artifactGroups[artifactNameShort], a)
 		}
 	}
-	for artifactNameShort := range artifacts {
-		artifacts[artifactNameShort] = StringsUnique(artifacts[artifactNameShort])
-		sort.Strings(artifacts[artifactNameShort])
+	for artifactNameShort := range artifactGroups {
+		artifactGroups[artifactNameShort] = StringsUnique(artifactGroups[artifactNameShort])
+		sort.Strings(artifactGroups[artifactNameShort])
 	}
 
 	unfixedIssueNumbers := []int{}
-	for artifactNameShort, artifacts2 := range artifacts {
-		s.logger.Info.Printf("Processing artifact %s ...\n", artifactNameShort)
+	for artifactNameShort, artifacts := range artifactGroups {
+		s.logger.Info.Printf("Scanning artifact group %s ...\n", artifactNameShort)
+		unnest := s.logger.Nest()
+
 		reports := []*types.Report{}
-		for _, arti := range artifacts2 {
-			report, err := s.ScanArtifact(arti)
+		for _, artifactName := range artifacts {
+			s.logger.Info.Printf("Scanning artifact %s ...\n", artifactName)
+			report, err := TrivyImage(s.ctx, s.dir, artifactName)
 			if err != nil {
+				unnest()
 				return err
 			}
 			reports = append(reports, report)
 		}
 		issueNumbers, err := s.ProcessUnfixedIssue(artifactNameShort, reports)
 		if err != nil {
+			unnest()
 			return err
 		}
 		unfixedIssueNumbers = append(unfixedIssueNumbers, issueNumbers...)
+		unnest()
 	}
 
 	if _, err := s.ProcessFixedIssues("", unfixedIssueNumbers); err != nil {
@@ -111,8 +117,9 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, reports []*types.Re
 		Vuln:
 			for _, vuln := range res.Vulnerabilities {
 				// prepare general data
-				policies := s.FindMatchingPolicies(*report, res, vuln)
-				for _, p := range policies {
+				matchingPolicies := s.EvaluateMatchingPolicies(*report, res, vuln)
+				policyBasedMitigationTasks := s.EvaluatePolicyBasedMitigationTasks(matchingPolicies)
+				for _, p := range matchingPolicies {
 					if p.Action.Ignore {
 						s.logger.Debug.Printf("Ignoring %s %s %s\n", report.ArtifactName, vuln.PkgName, vuln.VulnerabilityID)
 						continue Vuln
@@ -120,27 +127,6 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, reports []*types.Re
 				}
 				id := fmt.Sprintf("%s/%s/%s", artifactNameShort, vuln.PkgName, vuln.VulnerabilityID)
 				idFooter := fmt.Sprintf("<!-- id=%s -->", id)
-				policyBasedMitigationTasks := []PolicyBasedMitigationTask{}
-				for _, p := range policies {
-					for _, key := range p.Action.Mitigate {
-						var mitigation *ConfigMitigation
-						for _, m := range s.config.Mitigations {
-							if m.Key == key {
-								mitigation = &m
-								break
-							}
-						}
-						if mitigation == nil {
-							s.logger.Warn.Printf("Policy references unknown mitigation %s", key)
-							continue
-						}
-						policyBasedMitigationTasks = append(policyBasedMitigationTasks, PolicyBasedMitigationTask{
-							Mitigation: *mitigation,
-							Policy:     p,
-							Done:       true,
-						})
-					}
-				}
 				title := vuln.Title
 				if title == "" {
 					title = StringAbbreviate(vuln.Description, 40)
@@ -148,6 +134,31 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, reports []*types.Re
 				if title == "" {
 					title = vuln.VulnerabilityID
 				}
+
+				cvssVector, cvssScore := FindVulnerabilityCVSSV3(vuln)
+				s.logger.Info.Printf("Found vulnerability\n")
+				unnest := s.logger.Nest()
+				s.logger.Info.Printf("ID: %s\n", vuln.VulnerabilityID)
+				s.logger.Info.Printf("Title: %s\n", title)
+				s.logger.Info.Printf("Artifact: %s\n", report.ArtifactName)
+				s.logger.Info.Printf("Package: %s\n", vuln.PkgName)
+				s.logger.Info.Printf("Installed Version: %s\n", vuln.InstalledVersion)
+				s.logger.Info.Printf("Fixed Version: %s\n", vuln.FixedVersion)
+				s.logger.Info.Printf("Published: %s\n", vuln.PublishedDate)
+				if cvssVector != "" {
+					s.logger.Info.Printf("CVSS Vector: %s\n", cvssVector)
+				}
+				if cvssScore != 0 {
+					s.logger.Info.Printf("CVSS Score: %.1f\n", cvssScore)
+				}
+				for _, m := range policyBasedMitigationTasks {
+					text := StringSanitize(m.Mitigation.Label)
+					if m.Policy.Comment != "" {
+						text = text + ": " + StringSanitize(strings.ReplaceAll(m.Policy.Comment, "\n", " "))
+					}
+					s.logger.Info.Printf("Mitigation: %s\n", text)
+				}
+				unnest()
 
 				// find existing issue
 				existingIssuesSearchLabels := []string{
@@ -360,11 +371,36 @@ func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers 
 	return issueNumbers, nil
 }
 
-func (s *Scan) FindMatchingPolicies(report types.Report, res types.Result, vuln types.DetectedVulnerability) []ConfigPolicy {
+func (s *Scan) EvaluateMatchingPolicies(report types.Report, res types.Result, vuln types.DetectedVulnerability) []ConfigPolicy {
 	result := []ConfigPolicy{}
 	for _, p := range s.config.Policies {
 		if p.Match.IsMatch(report, res, vuln) {
 			result = append(result, p)
+		}
+	}
+	return result
+}
+
+func (s *Scan) EvaluatePolicyBasedMitigationTasks(matchingPolicies []ConfigPolicy) []PolicyBasedMitigationTask {
+	result := []PolicyBasedMitigationTask{}
+	for _, p := range matchingPolicies {
+		for _, key := range p.Action.Mitigate {
+			var mitigation *ConfigMitigation
+			for _, m := range s.config.Mitigations {
+				if m.Key == key {
+					mitigation = &m
+					break
+				}
+			}
+			if mitigation == nil {
+				s.logger.Warn.Printf("Policy references unknown mitigation %s", key)
+				continue
+			}
+			result = append(result, PolicyBasedMitigationTask{
+				Mitigation: *mitigation,
+				Policy:     p,
+				Done:       true,
+			})
 		}
 	}
 	return result
@@ -402,8 +438,8 @@ func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln
 | CVSS Vector | %s
 | Artifact | %s
 | Package | %s
-| Installed version | %s
-| Fixed version | %s
+| Installed Version | %s
+| Fixed Version | %s
 | Published | %v
 `, vuln.VulnerabilityID, cvssScore, cvssVector, report.ArtifactName, vuln.PkgName, vuln.InstalledVersion, vuln.FixedVersion, vuln.PublishedDate))
 
@@ -467,42 +503,6 @@ func (s *Scan) ScrapeFile(file string) ([]string, error) {
 	}
 
 	return result, nil
-}
-
-func (s *Scan) ScanArtifact(artifact string) (*types.Report, error) {
-	s.logger.Info.Printf("Scanning artifact %s ...\n", artifact)
-
-	report, err := TrivyImage(s.ctx, s.dir, artifact)
-	if err != nil {
-		return nil, err
-	}
-
-	counts := map[string]int{
-		"UNKNOWN":  0,
-		"LOW":      0,
-		"MEDIUM":   0,
-		"HIGH":     0,
-		"CRITICAL": 0,
-	}
-	for _, result := range report.Results {
-		for _, vuln := range result.Vulnerabilities {
-			if i, ok := counts[vuln.Severity]; ok {
-				counts[vuln.Severity] = i + 1
-			} else {
-				counts["UNKNOWN"] = counts["UNKNOWN"] + 1
-			}
-		}
-	}
-
-	s.logger.Debug.Printf("Found %d critical, %d high, %d medium, %d low, %d unknown vulnerabilities\n",
-		counts["CRITICAL"],
-		counts["HIGH"],
-		counts["MEDIUM"],
-		counts["LOW"],
-		counts["UNKNOWN"],
-	)
-
-	return report, nil
 }
 
 func extractArtifactsFromRawYaml(node interface{}) []string {

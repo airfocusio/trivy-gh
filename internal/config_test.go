@@ -40,7 +40,7 @@ func TestLoadConfig(t *testing.T) {
 			},
 			Policies: []ConfigPolicy{
 				{
-					Comment: "can only be executed from inside the container.\n",
+					Comment: "Can only be executed from inside the container.\n",
 					Match: &AndPolicyMatcher{
 						Inner: []PolicyMatcher{
 							&PackageNamePolicyMatcher{

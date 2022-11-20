@@ -34,7 +34,7 @@ func TestFindMatchingPolicies(t *testing.T) {
 			Policies: []ConfigPolicy{p1},
 		}, "../example", true, 0, 0)
 
-		assert.Equal(t, []ConfigPolicy{p1}, scan.FindMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
+		assert.Equal(t, []ConfigPolicy{p1}, scan.EvaluateMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
 	})
 }
 
@@ -52,8 +52,8 @@ func TestRenderGithubIssueBody(t *testing.T) {
 | CVSS Vector | CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N
 | Artifact | ghcr.io/airfocusio/trivy-gh-test-debian:11
 | Package | apt
-| Installed version | 2.2.4
-| Fixed version |
+| Installed Version | 2.2.4
+| Fixed Version |
 | Published | <nil>
 
 ### Manual mitigations
