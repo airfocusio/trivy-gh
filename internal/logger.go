@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-const loggerFlags = 0 // log.Ltime | log.Lshortfile
+const (
+	loggerIndent = "    "
+	loggerFlags  = 0 // log.Ltime | log.Lshortfile
+)
 
 type Logger struct {
 	Debug *log.Logger
@@ -64,15 +67,30 @@ func NewNullLogger() Logger {
 
 func (l *Logger) Nest() func() {
 	l.indent = l.indent + 1
-	l.Debug = log.New(l.debugWriter, strings.Repeat(" ", l.indent*4), loggerFlags)
-	l.Info = log.New(l.infoWriter, strings.Repeat(" ", l.indent*4), loggerFlags)
-	l.Warn = log.New(l.warnWriter, strings.Repeat(" ", l.indent*4), loggerFlags)
-	l.Error = log.New(l.errorWriter, strings.Repeat(" ", l.indent*4), loggerFlags)
+	l.Debug = log.New(l.debugWriter, strings.Repeat(loggerIndent, l.indent), loggerFlags)
+	l.Info = log.New(l.infoWriter, strings.Repeat(loggerIndent, l.indent), loggerFlags)
+	l.Warn = log.New(l.warnWriter, strings.Repeat(loggerIndent, l.indent), loggerFlags)
+	l.Error = log.New(l.errorWriter, strings.Repeat(loggerIndent, l.indent), loggerFlags)
 	return func() {
 		l.indent = l.indent - 1
-		l.Debug = log.New(l.debugWriter, strings.Repeat(" ", l.indent*4), loggerFlags)
-		l.Info = log.New(l.infoWriter, strings.Repeat(" ", l.indent*4), loggerFlags)
-		l.Warn = log.New(l.warnWriter, strings.Repeat(" ", l.indent*4), loggerFlags)
-		l.Error = log.New(l.errorWriter, strings.Repeat(" ", l.indent*4), loggerFlags)
+		l.Debug = log.New(l.debugWriter, strings.Repeat(loggerIndent, l.indent), loggerFlags)
+		l.Info = log.New(l.infoWriter, strings.Repeat(loggerIndent, l.indent), loggerFlags)
+		l.Warn = log.New(l.warnWriter, strings.Repeat(loggerIndent, l.indent), loggerFlags)
+		l.Error = log.New(l.errorWriter, strings.Repeat(loggerIndent, l.indent), loggerFlags)
+	}
+}
+
+func (l *Logger) CloneNested() *Logger {
+	indent := l.indent + 1
+	return &Logger{
+		Debug:       log.New(l.debugWriter, strings.Repeat(loggerIndent, indent), loggerFlags),
+		Info:        log.New(l.infoWriter, strings.Repeat(loggerIndent, indent), loggerFlags),
+		Warn:        log.New(l.warnWriter, strings.Repeat(loggerIndent, indent), loggerFlags),
+		Error:       log.New(l.errorWriter, strings.Repeat(loggerIndent, indent), loggerFlags),
+		debugWriter: l.debugWriter,
+		infoWriter:  l.infoWriter,
+		warnWriter:  l.warnWriter,
+		errorWriter: l.errorWriter,
+		indent:      indent,
 	}
 }

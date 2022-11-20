@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"sort"
 	"strings"
@@ -131,27 +132,26 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 		title = vuln.VulnerabilityID
 	}
 
-	cvssVector, cvssScore := FindVulnerabilityCVSSV3(vuln)
-	s.logger.Info.Printf("Found vulnerability\n")
-	unnest := s.logger.Nest()
-	s.logger.Info.Printf("ID: %s\n", vuln.VulnerabilityID)
-	s.logger.Info.Printf("Title: %s\n", title)
-	s.logger.Info.Printf("Artifact: %s\n", report.ArtifactName)
-	s.logger.Info.Printf("Package: %s\n", vuln.PkgName)
-	if cvssVector != "" {
-		s.logger.Info.Printf("CVSS: %s (%.1f)\n", cvssVector, cvssScore)
-	}
-	for _, m := range policyBasedMitigationTasks {
-		text := StringSanitize(m.Mitigation.Label)
-		if m.Policy.Comment != "" {
-			text = text + ": " + StringSanitize(strings.ReplaceAll(m.Policy.Comment, "\n", " "))
+	logDetails := func(logger *log.Logger) {
+		cvssVector, cvssScore := FindVulnerabilityCVSSV3(vuln)
+		logger.Printf("ID: %s\n", vuln.VulnerabilityID)
+		logger.Printf("Title: %s\n", title)
+		logger.Printf("Artifact: %s\n", report.ArtifactName)
+		logger.Printf("Package: %s\n", vuln.PkgName)
+		if cvssVector != "" {
+			logger.Printf("CVSS: %s (%.1f)\n", cvssVector, cvssScore)
 		}
-		s.logger.Info.Printf("Mitigation: %s\n", text)
+		for _, m := range policyBasedMitigationTasks {
+			text := StringSanitize(m.Mitigation.Label)
+			if m.Policy.Comment != "" {
+				text = text + ": " + StringSanitize(strings.ReplaceAll(m.Policy.Comment, "\n", " "))
+			}
+			logger.Printf("Mitigation: %s\n", text)
+		}
+		if ignore {
+			logger.Printf("Ignores: yes\n")
+		}
 	}
-	if ignore {
-		s.logger.Info.Printf("Ignores: yes\n")
-	}
-	unnest()
 
 	// find existing issue
 	existingIssuesSearchLabels := []string{
@@ -217,15 +217,18 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 		}
 
 		if ignore {
+			logDetails(s.logger.CloneNested().Debug)
 			s.logger.Debug.Printf("Skipped creating issue %s (ignore)\n", *issue.Title)
 			return nil, nil
 		}
 		s.issuesCreated = s.issuesCreated + 1
 		if s.dry {
-			s.logger.Debug.Printf("Skipped creating issue %s (dry run)\n", *issue.Title)
+			s.logger.Info.Printf("Skipped creating issue %s (dry run)\n", *issue.Title)
+			logDetails(s.logger.CloneNested().Info)
 			return nil, nil
 		} else if s.issueCreateLimit >= 0 && s.issuesCreated >= s.issueCreateLimit {
 			s.logger.Debug.Printf("Skipped creating issue %s (limit exceeded)\n", *issue.Title)
+			logDetails(s.logger.CloneNested().Debug)
 			return nil, nil
 		} else {
 			issueRes, _, err := s.githubClient.Issues.Create(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &issue)
@@ -233,6 +236,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 				return nil, err
 			}
 			s.logger.Info.Printf("Created issue #%d %s\n", *issueRes.Number, *issue.Title)
+			logDetails(s.logger.CloneNested().Info)
 			if *issueRes.State != state {
 				_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *issueRes.Number, &github.IssueRequest{
 					State: &state,
@@ -294,14 +298,17 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 		if !compareGithubIssues(*existingIssue, issue) {
 			if ignore {
 				s.logger.Debug.Printf("Skipped updating issue #%d %s (ignore)\n", *existingIssue.Number, *issue.Title)
+				logDetails(s.logger.CloneNested().Debug)
 				return nil, nil
 			}
 			s.issuesUpdated = s.issuesUpdated + 1
 			if s.dry {
-				s.logger.Debug.Printf("Skipped updating issue #%d %s (dry run)\n", *existingIssue.Number, *issue.Title)
+				s.logger.Info.Printf("Skipped updating issue #%d %s (dry run)\n", *existingIssue.Number, *issue.Title)
+				logDetails(s.logger.CloneNested().Info)
 				return nil, nil
 			} else if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
 				s.logger.Debug.Printf("Skipped updating issue #%d %s (limit exceeded)\n", *existingIssue.Number, *issue.Title)
+				logDetails(s.logger.CloneNested().Debug)
 				return nil, nil
 			} else {
 				_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *existingIssue.Number, &issue)
@@ -309,6 +316,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 					return nil, err
 				}
 				s.logger.Info.Printf("Updated issue #%d %s\n", *existingIssue.Number, *issue.Title)
+				logDetails(s.logger.CloneNested().Info)
 				return existingIssue.Number, nil
 			}
 		} else {
@@ -377,7 +385,7 @@ func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers 
 		if s.dry {
 			s.logger.Info.Printf("Skipped updating issue #%d %s (dry run)\n", *fixedIssue.Number, *fixedIssue.Title)
 		} else if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
-			s.logger.Info.Printf("Skipped updating issue #%d %s (limit exceeded)\n", *fixedIssue.Number, *fixedIssue.Title)
+			s.logger.Debug.Printf("Skipped updating issue #%d %s (limit exceeded)\n", *fixedIssue.Number, *fixedIssue.Title)
 		} else {
 			_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *fixedIssue.Number, &issue)
 			if err != nil {
