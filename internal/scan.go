@@ -94,7 +94,7 @@ func (s *Scan) Run() error {
 			}
 			reports = append(reports, report)
 		}
-		issueNumbers, err := s.ProcessUnfixedIssue(artifactNameShort, reports)
+		issueNumbers, err := s.ProcessUnfixedIssues(artifactNameShort, reports)
 		if err != nil {
 			unnest()
 			return err
@@ -110,197 +110,224 @@ func (s *Scan) Run() error {
 	return nil
 }
 
-func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, reports []*types.Report) ([]int, error) {
-	issueNumbers := []int{}
-	for _, report := range reports {
-		for _, res := range report.Results {
-		Vuln:
-			for _, vuln := range res.Vulnerabilities {
-				// prepare general data
-				matchingPolicies := s.EvaluateMatchingPolicies(*report, res, vuln)
-				policyBasedMitigationTasks := s.EvaluatePolicyBasedMitigationTasks(matchingPolicies)
-				for _, p := range matchingPolicies {
-					if p.Ignore {
-						s.logger.Debug.Printf("Ignoring %s %s %s\n", report.ArtifactName, vuln.PkgName, vuln.VulnerabilityID)
-						continue Vuln
-					}
-				}
-				id := fmt.Sprintf("%s/%s/%s", artifactNameShort, vuln.PkgName, vuln.VulnerabilityID)
-				idFooter := fmt.Sprintf("<!-- id=%s -->", id)
-				title := vuln.Title
-				if title == "" {
-					title = StringAbbreviate(vuln.Description, 40)
-				}
-				if title == "" {
-					title = vuln.VulnerabilityID
-				}
+func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report, res types.Result, vuln types.DetectedVulnerability) (*int, error) {
+	// prepare general data
+	matchingPolicies := s.EvaluateMatchingPolicies(report, res, vuln)
+	policyBasedMitigationTasks := s.EvaluatePolicyBasedMitigationTasks(matchingPolicies)
+	ignore := false
+	for _, p := range matchingPolicies {
+		if p.Ignore {
+			ignore = true
+			break
+		}
+	}
+	id := fmt.Sprintf("%s/%s/%s", artifactNameShort, vuln.PkgName, vuln.VulnerabilityID)
+	idFooter := fmt.Sprintf("<!-- id=%s -->", id)
+	title := vuln.Title
+	if title == "" {
+		title = StringAbbreviate(vuln.Description, 40)
+	}
+	if title == "" {
+		title = vuln.VulnerabilityID
+	}
 
-				cvssVector, cvssScore := FindVulnerabilityCVSSV3(vuln)
-				s.logger.Info.Printf("Found vulnerability\n")
-				unnest := s.logger.Nest()
-				s.logger.Info.Printf("ID: %s\n", vuln.VulnerabilityID)
-				s.logger.Info.Printf("Title: %s\n", title)
-				s.logger.Info.Printf("Artifact: %s\n", report.ArtifactName)
-				s.logger.Info.Printf("Package: %s\n", vuln.PkgName)
-				if cvssVector != "" {
-					s.logger.Info.Printf("CVSS: %s (%.1f)\n", cvssVector, cvssScore)
-				}
-				for _, m := range policyBasedMitigationTasks {
-					text := StringSanitize(m.Mitigation.Label)
-					if m.Policy.Comment != "" {
-						text = text + ": " + StringSanitize(strings.ReplaceAll(m.Policy.Comment, "\n", " "))
-					}
-					s.logger.Info.Printf("Mitigation: %s\n", text)
-				}
-				unnest()
+	cvssVector, cvssScore := FindVulnerabilityCVSSV3(vuln)
+	s.logger.Info.Printf("Found vulnerability\n")
+	unnest := s.logger.Nest()
+	s.logger.Info.Printf("ID: %s\n", vuln.VulnerabilityID)
+	s.logger.Info.Printf("Title: %s\n", title)
+	s.logger.Info.Printf("Artifact: %s\n", report.ArtifactName)
+	s.logger.Info.Printf("Package: %s\n", vuln.PkgName)
+	if cvssVector != "" {
+		s.logger.Info.Printf("CVSS: %s (%.1f)\n", cvssVector, cvssScore)
+	}
+	for _, m := range policyBasedMitigationTasks {
+		text := StringSanitize(m.Mitigation.Label)
+		if m.Policy.Comment != "" {
+			text = text + ": " + StringSanitize(strings.ReplaceAll(m.Policy.Comment, "\n", " "))
+		}
+		s.logger.Info.Printf("Mitigation: %s\n", text)
+	}
+	if ignore {
+		s.logger.Info.Printf("Ignores: yes\n")
+	}
+	unnest()
 
-				// find existing issue
-				existingIssuesSearchLabels := []string{
-					vuln.VulnerabilityID,
-					artifactNameShort,
-				}
-				existingIssuesSearchState := "all"
-				existingIssues, _, err := s.githubClient.Issues.ListByRepo(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &github.IssueListByRepoOptions{
-					Labels: existingIssuesSearchLabels,
-					State:  existingIssuesSearchState,
-					ListOptions: github.ListOptions{
-						PerPage: 100,
-					},
+	// find existing issue
+	existingIssuesSearchLabels := []string{
+		vuln.VulnerabilityID,
+		artifactNameShort,
+	}
+	existingIssuesSearchState := "all"
+	existingIssues, _, err := s.githubClient.Issues.ListByRepo(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &github.IssueListByRepoOptions{
+		Labels: existingIssuesSearchLabels,
+		State:  existingIssuesSearchState,
+		ListOptions: github.ListOptions{
+			PerPage: 100,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var existingIssue *github.Issue
+	for _, ei := range existingIssues {
+		if ei.Body != nil && strings.Contains(*ei.Body, idFooter) {
+			existingIssue = ei
+			break
+		}
+	}
+
+	if existingIssue == nil {
+		manualMitigationTasks := []ManualMitigationTask{}
+		for _, m := range s.config.Mitigations {
+			if !m.AllowManual {
+				continue
+			}
+			manualMitigationTasks = append(manualMitigationTasks, ManualMitigationTask{
+				Mitigation: m,
+				Done:       false,
+			})
+		}
+
+		// create new issue
+		body := s.RenderGithubIssueBody(report, res, vuln, manualMitigationTasks, policyBasedMitigationTasks, idFooter)
+		labels := []string{
+			vuln.VulnerabilityID,
+			artifactNameShort,
+			vuln.Severity,
+		}
+		state := "open"
+		for _, p := range manualMitigationTasks {
+			if p.Done {
+				state = "closed"
+				break
+			}
+		}
+		for _, p := range policyBasedMitigationTasks {
+			if p.Done {
+				state = "closed"
+				break
+			}
+		}
+		issue := github.IssueRequest{
+			Title:  &title,
+			Body:   &body,
+			Labels: &labels,
+			State:  &state,
+		}
+
+		if ignore {
+			s.logger.Debug.Printf("Skipped creating issue %s (ignore)\n", *issue.Title)
+			return nil, nil
+		}
+		s.issuesCreated = s.issuesCreated + 1
+		if s.dry {
+			s.logger.Debug.Printf("Skipped creating issue %s (dry run)\n", *issue.Title)
+			return nil, nil
+		} else if s.issueCreateLimit >= 0 && s.issuesCreated >= s.issueCreateLimit {
+			s.logger.Debug.Printf("Skipped creating issue %s (limit exceeded)\n", *issue.Title)
+			return nil, nil
+		} else {
+			issueRes, _, err := s.githubClient.Issues.Create(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &issue)
+			if err != nil {
+				return nil, err
+			}
+			s.logger.Info.Printf("Created issue #%d %s\n", *issueRes.Number, *issue.Title)
+			if *issueRes.State != state {
+				_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *issueRes.Number, &github.IssueRequest{
+					State: &state,
 				})
 				if err != nil {
 					return nil, err
 				}
-				var existingIssue *github.Issue
-				for _, ei := range existingIssues {
-					if ei.Body != nil && strings.Contains(*ei.Body, idFooter) {
-						existingIssue = ei
-						issueNumbers = append(issueNumbers, *ei.Number)
-						break
-					}
+			}
+			return issueRes.Number, nil
+		}
+	} else {
+		existingIssueTasks := extractGithubIssueTasks(*existingIssue.Body)
+		manualMitigationTasks := []ManualMitigationTask{}
+		for _, m := range s.config.Mitigations {
+			if !m.AllowManual {
+				continue
+			}
+			var task *GithubIssueTask
+			for _, t := range existingIssueTasks {
+				key, ok := t.Params["manual-mitigation"]
+				if ok && key == m.Key {
+					task = &t
+					break
 				}
+			}
+			manualMitigationTasks = append(manualMitigationTasks, ManualMitigationTask{
+				Mitigation: m,
+				Done:       task != nil && task.Done,
+			})
+		}
 
-				if existingIssue == nil {
-					manualMitigationTasks := []ManualMitigationTask{}
-					for _, m := range s.config.Mitigations {
-						if !m.AllowManual {
-							continue
-						}
-						manualMitigationTasks = append(manualMitigationTasks, ManualMitigationTask{
-							Mitigation: m,
-							Done:       false,
-						})
-					}
+		// update existing issue if needed
+		body := s.RenderGithubIssueBody(report, res, vuln, manualMitigationTasks, policyBasedMitigationTasks, idFooter)
+		labels := []string{
+			vuln.VulnerabilityID,
+			artifactNameShort,
+			vuln.Severity,
+		}
+		state := "open"
+		for _, p := range manualMitigationTasks {
+			if p.Done {
+				state = "closed"
+				break
+			}
+		}
+		for _, p := range policyBasedMitigationTasks {
+			if p.Done {
+				state = "closed"
+				break
+			}
+		}
+		issue := github.IssueRequest{
+			Title:  &title,
+			Body:   &body,
+			Labels: &labels,
+			State:  &state,
+		}
 
-					// create new issue
-					body := s.RenderGithubIssueBody(*report, res, vuln, manualMitigationTasks, policyBasedMitigationTasks, idFooter)
-					labels := []string{
-						vuln.VulnerabilityID,
-						artifactNameShort,
-						vuln.Severity,
-					}
-					state := "open"
-					for _, p := range manualMitigationTasks {
-						if p.Done {
-							state = "closed"
-							break
-						}
-					}
-					for _, p := range policyBasedMitigationTasks {
-						if p.Done {
-							state = "closed"
-							break
-						}
-					}
-					issue := github.IssueRequest{
-						Title:  &title,
-						Body:   &body,
-						Labels: &labels,
-						State:  &state,
-					}
+		if !compareGithubIssues(*existingIssue, issue) {
+			if ignore {
+				s.logger.Debug.Printf("Skipped updating issue #%d %s (ignore)\n", *existingIssue.Number, *issue.Title)
+				return nil, nil
+			}
+			s.issuesUpdated = s.issuesUpdated + 1
+			if s.dry {
+				s.logger.Debug.Printf("Skipped updating issue #%d %s (dry run)\n", *existingIssue.Number, *issue.Title)
+				return nil, nil
+			} else if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
+				s.logger.Debug.Printf("Skipped updating issue #%d %s (limit exceeded)\n", *existingIssue.Number, *issue.Title)
+				return nil, nil
+			} else {
+				_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *existingIssue.Number, &issue)
+				if err != nil {
+					return nil, err
+				}
+				s.logger.Info.Printf("Updated issue #%d %s\n", *existingIssue.Number, *issue.Title)
+				return existingIssue.Number, nil
+			}
+		} else {
+			return nil, nil
+		}
+	}
+}
 
-					if s.dry {
-						s.logger.Info.Printf("Skipped creating issue %s (dry run)\n", *issue.Title)
-					} else if s.issueCreateLimit >= 0 && s.issuesCreated >= s.issueCreateLimit {
-						s.logger.Info.Printf("Skipped creating issue %s (limit exceeded)\n", *issue.Title)
-					} else {
-						issueRes, _, err := s.githubClient.Issues.Create(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &issue)
-						if err != nil {
-							return nil, err
-						}
-						issueNumbers = append(issueNumbers, *issueRes.Number)
-						s.logger.Info.Printf("Created issue #%d %s\n", *issueRes.Number, *issue.Title)
-						if *issueRes.State != state {
-							_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *issueRes.Number, &github.IssueRequest{
-								State: &state,
-							})
-							if err != nil {
-								return nil, err
-							}
-						}
-					}
-					s.issuesCreated = s.issuesCreated + 1
-				} else {
-					existingIssueTasks := extractGithubIssueTasks(*existingIssue.Body)
-					manualMitigationTasks := []ManualMitigationTask{}
-					for _, m := range s.config.Mitigations {
-						if !m.AllowManual {
-							continue
-						}
-						var task *GithubIssueTask
-						for _, t := range existingIssueTasks {
-							key, ok := t.Params["manual-mitigation"]
-							if ok && key == m.Key {
-								task = &t
-								break
-							}
-						}
-						manualMitigationTasks = append(manualMitigationTasks, ManualMitigationTask{
-							Mitigation: m,
-							Done:       task != nil && task.Done,
-						})
-					}
-
-					// update existing issue if needed
-					body := s.RenderGithubIssueBody(*report, res, vuln, manualMitigationTasks, policyBasedMitigationTasks, idFooter)
-					labels := []string{
-						vuln.VulnerabilityID,
-						artifactNameShort,
-						vuln.Severity,
-					}
-					state := "open"
-					for _, p := range manualMitigationTasks {
-						if p.Done {
-							state = "closed"
-							break
-						}
-					}
-					for _, p := range policyBasedMitigationTasks {
-						if p.Done {
-							state = "closed"
-							break
-						}
-					}
-					issue := github.IssueRequest{
-						Title:  &title,
-						Body:   &body,
-						Labels: &labels,
-						State:  &state,
-					}
-
-					if !compareGithubIssues(*existingIssue, issue) {
-						if s.dry {
-							s.logger.Info.Printf("Skipped updating issue #%d %s (dry run)\n", *existingIssue.Number, *issue.Title)
-						} else if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
-							s.logger.Info.Printf("Skipped updating issue #%d %s (limit exceeded)\n", *existingIssue.Number, *issue.Title)
-						} else {
-							_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *existingIssue.Number, &issue)
-							if err != nil {
-								return nil, err
-							}
-							s.logger.Info.Printf("Updated issue #%d %s\n", *existingIssue.Number, *issue.Title)
-						}
-						s.issuesUpdated = s.issuesUpdated + 1
-					}
+func (s *Scan) ProcessUnfixedIssues(artifactNameShort string, reports []*types.Report) ([]int, error) {
+	issueNumbers := []int{}
+	for _, report := range reports {
+		for _, res := range report.Results {
+			for _, vuln := range res.Vulnerabilities {
+				issueNumber, err := s.ProcessUnfixedIssue(artifactNameShort, *report, res, vuln)
+				if err != nil {
+					return nil, err
+				}
+				if issueNumber != nil {
+					issueNumbers = append(issueNumbers, *issueNumber)
 				}
 			}
 		}

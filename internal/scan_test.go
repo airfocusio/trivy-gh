@@ -194,7 +194,7 @@ func TestScan(t *testing.T) {
 	}
 
 	// create
-	issueNumbers1, err := scan.ProcessUnfixedIssue(artifactNameShort, []*types.Report{&report1})
+	issueNumbers1, err := scan.ProcessUnfixedIssues(artifactNameShort, []*types.Report{&report1})
 	assert.NoError(t, err)
 	assert.Len(t, issueNumbers1, 1)
 	issueNumber := issueNumbers1[0]
@@ -232,7 +232,7 @@ func TestScan(t *testing.T) {
 	}
 
 	// reopen as it has come back
-	issueNumbers4, err := scan.ProcessUnfixedIssue(artifactNameShort, []*types.Report{&report1})
+	issueNumbers4, err := scan.ProcessUnfixedIssues(artifactNameShort, []*types.Report{&report1})
 	assert.NoError(t, err)
 	assert.Equal(t, []int{issueNumber}, issueNumbers4)
 	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
@@ -241,7 +241,7 @@ func TestScan(t *testing.T) {
 	}
 
 	// close again as it is mitigated by policy
-	issueNumbers, err := scan.ProcessUnfixedIssue(artifactNameShort, []*types.Report{&report2})
+	issueNumbers, err := scan.ProcessUnfixedIssues(artifactNameShort, []*types.Report{&report2})
 	assert.NoError(t, err)
 	assert.Equal(t, []int{issueNumber}, issueNumbers)
 	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
