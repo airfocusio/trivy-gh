@@ -10,12 +10,12 @@ import (
 
 var (
 	scanCmdDirectory        string
-	scanCmdDry              bool
+	scanCmdDryRun           bool
 	scanCmdIssueCreateLimit int
 	scanCmdIssueUpdateLimit int
 	scanCmdRegisterFlags    = func(cmd *cobra.Command) {
 		cmd.Flags().StringVar(&scanCmdDirectory, "dir", ".", "dir")
-		cmd.Flags().BoolVar(&scanCmdDry, "dry", false, "dry")
+		cmd.Flags().BoolVar(&scanCmdDryRun, "dry-run", false, "dry-run")
 		cmd.Flags().IntVar(&scanCmdIssueCreateLimit, "issue-create-limit", -1, "issue-create-limit")
 		cmd.Flags().IntVar(&scanCmdIssueUpdateLimit, "issue-update-limit", -1, "issue-update-limit")
 	}
@@ -36,7 +36,7 @@ var (
 				return fmt.Errorf("unable to load configuration: %w", err)
 			}
 			logger := internal.NewLogger(rootCmdVerbose)
-			scan := internal.NewScan(logger, *config, dir, scanCmdDry, scanCmdIssueCreateLimit, scanCmdIssueUpdateLimit)
+			scan := internal.NewScan(logger, *config, dir, scanCmdDryRun, scanCmdIssueCreateLimit, scanCmdIssueUpdateLimit)
 			return scan.Run()
 		},
 	}

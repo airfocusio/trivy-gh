@@ -29,11 +29,11 @@ type Logger struct {
 func NewLogger(withDebug bool) Logger {
 	debugWriter := ioutil.Discard
 	if withDebug {
-		debugWriter = os.Stderr
+		debugWriter = os.Stdout
 	}
-	infoWriter := (io.Writer)(os.Stderr)
-	warnWriter := (io.Writer)(os.Stderr)
-	errorWriter := (io.Writer)(os.Stderr)
+	infoWriter := (io.Writer)(os.Stdout)
+	warnWriter := (io.Writer)(os.Stdout)
+	errorWriter := (io.Writer)(os.Stdout)
 	return Logger{
 		Debug:       log.New(debugWriter, "", loggerFlags),
 		Info:        log.New(infoWriter, "", loggerFlags),

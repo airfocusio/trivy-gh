@@ -23,7 +23,7 @@ type Scan struct {
 	logger           Logger
 	config           Config
 	dir              string
-	dry              bool
+	dryRun           bool
 	issueCreateLimit int
 	issueUpdateLimit int
 	issuesCreated    int
@@ -32,7 +32,7 @@ type Scan struct {
 	githubClient     *github.Client
 }
 
-func NewScan(logger Logger, config Config, dir string, dry bool, issueCreateLimit int, issueUpdateLimit int) Scan {
+func NewScan(logger Logger, config Config, dir string, dryRun bool, issueCreateLimit int, issueUpdateLimit int) Scan {
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: config.Github.Token},
@@ -42,7 +42,7 @@ func NewScan(logger Logger, config Config, dir string, dry bool, issueCreateLimi
 		logger:           logger,
 		config:           config,
 		dir:              dir,
-		dry:              dry,
+		dryRun:           dryRun,
 		issueCreateLimit: issueCreateLimit,
 		issueUpdateLimit: issueUpdateLimit,
 		ctx:              ctx,
@@ -228,13 +228,13 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 			State:  &state,
 		}
 
-		if s.dry {
-			s.logger.Info.Printf("Skipped creating issue %q [dry run]\n", *issue.Title)
+		if s.issueCreateLimit >= 0 && s.issuesCreated >= s.issueCreateLimit {
+			s.logger.Info.Printf("Skipped creating issue %q [limit exceeded]\n", *issue.Title)
 			logDetails(s.logger.CloneNested().Info)
 			return nil, nil
-		} else if s.issueCreateLimit >= 0 && s.issuesCreated >= s.issueCreateLimit {
-			s.logger.Debug.Printf("Skipped creating issue %q [limit exceeded]\n", *issue.Title)
-			logDetails(s.logger.CloneNested().Debug)
+		} else if s.dryRun {
+			s.logger.Info.Printf("Skipped creating issue %q [dry run]\n", *issue.Title)
+			logDetails(s.logger.CloneNested().Info)
 			return nil, nil
 		} else {
 			issueRes, _, err := s.githubClient.Issues.Create(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &issue)
@@ -307,13 +307,13 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 		}
 
 		if !compareGithubIssues(*existingIssue, issue) {
-			if s.dry {
-				s.logger.Info.Printf("Skipped updating issue %q (#%d) [dry run]\n", *issue.Title, *existingIssue.Number)
+			if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
+				s.logger.Info.Printf("Skipped updating issue %q (#%d) [limit exceeded]\n", *issue.Title, *existingIssue.Number)
 				logDetails(s.logger.CloneNested().Info)
 				return existingIssue.Number, nil
-			} else if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
-				s.logger.Debug.Printf("Skipped updating issue %q (#%d) [limit exceeded]\n", *issue.Title, *existingIssue.Number)
-				logDetails(s.logger.CloneNested().Debug)
+			} else if s.dryRun {
+				s.logger.Info.Printf("Skipped updating issue %q (#%d) [dry run]\n", *issue.Title, *existingIssue.Number)
+				logDetails(s.logger.CloneNested().Info)
 				return existingIssue.Number, nil
 			} else {
 				_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *existingIssue.Number, &issue)
@@ -388,10 +388,10 @@ func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers 
 		issue := github.IssueRequest{
 			State: &state,
 		}
-		if s.dry {
+		if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
+			s.logger.Info.Printf("Skipped updating issue %q (#%d) [limit exceeded]\n", *fixedIssue.Title, *fixedIssue.Number)
+		} else if s.dryRun {
 			s.logger.Info.Printf("Skipped updating issue %q (#%d) [dry run]\n", *fixedIssue.Title, *fixedIssue.Number)
-		} else if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
-			s.logger.Debug.Printf("Skipped updating issue %q (#%d) [limit exceeded]\n", *fixedIssue.Title, *fixedIssue.Number)
 		} else {
 			_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *fixedIssue.Number, &issue)
 			if err != nil {
