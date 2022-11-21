@@ -502,6 +502,9 @@ func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln
 `, vuln.Description))
 
 	references := "### References\n\n"
+	if vuln.PrimaryURL != "" {
+		references = references + vuln.PrimaryURL + "\n"
+	}
 	for _, url := range vuln.References {
 		references = references + url + "\n"
 	}

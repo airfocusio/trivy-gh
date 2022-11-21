@@ -83,6 +83,7 @@ func TestRenderGithubIssueBody(t *testing.T) {
 
 ### References
 
+https://domain.com/main
 https://domain.com/path1
 https://domain.com/path2
 
@@ -93,6 +94,7 @@ https://domain.com/path2
 		VulnerabilityID:  "CVE-2011-3374",
 		PkgName:          "apt",
 		InstalledVersion: "2.2.4",
+		PrimaryURL:       "https://domain.com/main",
 		Vulnerability: trivydbtypes.Vulnerability{
 			CVSS: trivydbtypes.VendorCVSS{
 				"nvd": trivydbtypes.CVSS{
