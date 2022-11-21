@@ -10,8 +10,23 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - uses: docker://ghcr.io/airfocusio/trivy-gh:latest
+    - name: Install trivy-gh
+      run: |
+        cd /tmp
+        URL=$(curl -fsSL https://api.github.com/repos/airfocusio/trivy-gh/releases/latest | jq -r '.assets[] | select(.name|test("linux_amd64\\.tar\\.gz$")) | .browser_download_url')
+        curl -fsSL "$URL" | tar xz
+        mv trivy-gh /usr/local/bin
+        trivy-gh version
+      shell: bash
+    - name: Install trivy
+      run: |
+        cd /tmp
+        URL=$(curl -fsSL https://api.github.com/repos/aquasecurity/trivy/releases/tags/v0.34.0 | jq -r '.assets[] | select(.name|test("Linux-64bit\\.tar\\.gz$")) | .browser_download_url')
+        curl -fsSL "$URL" | tar xz
+        mv trivy /usr/local/bin
+        trivy --version
+      shell: bash
+    - run: trivy-gh ${{ inputs.args }}
+      shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
-      with:
-        args: ${{ inputs.args }}
