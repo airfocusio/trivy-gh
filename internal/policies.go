@@ -28,6 +28,11 @@ func PolicyMatcherUnmarshalYAML(value *yaml.Node) (PolicyMatcher, error) {
 		return &packageName, nil
 	}
 
+	class := ClassPolicyMatcher{}
+	if err := class.UnmarshalYAML(value); err == nil {
+		return &class, nil
+	}
+
 	cvss := CVSSPolicyMatcher{}
 	if err := cvss.UnmarshalYAML(value); err == nil {
 		return &cvss, nil
@@ -163,6 +168,33 @@ func (c *PackageNamePolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
 	}
 	if len(c.PackageName) == 0 {
 		return fmt.Errorf("not a PackageNamePolicyMatcher")
+	}
+	return nil
+}
+
+var _ PolicyMatcher = (*ClassPolicyMatcher)(nil)
+
+type ClassPolicyMatcher struct {
+	Class StringArray `yaml:"class"`
+}
+
+func (p *ClassPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
+	for _, n := range p.Class {
+		if n == string(res.Class) {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *ClassPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
+	type ClassPolicyMatcher2 ClassPolicyMatcher
+	err := value.Decode((*ClassPolicyMatcher2)(c))
+	if err != nil {
+		return err
+	}
+	if len(c.Class) == 0 {
+		return fmt.Errorf("not a ClassPolicyMatcher")
 	}
 	return nil
 }

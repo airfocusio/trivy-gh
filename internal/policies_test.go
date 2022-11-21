@@ -54,6 +54,16 @@ func TestPackageNamePolicyMatcher(t *testing.T) {
 	assert.Equal(t, true, p2.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{PkgName: "sh"}))
 }
 
+func TestClassPolicyMatcher(t *testing.T) {
+	p1 := ClassPolicyMatcher{Class: []string{"os-pkgs"}}
+	assert.Equal(t, true, p1.IsMatch(types.Report{}, types.Result{Class: "os-pkgs"}, types.DetectedVulnerability{}))
+	assert.Equal(t, false, p1.IsMatch(types.Report{}, types.Result{Class: "lang-pkgs"}, types.DetectedVulnerability{}))
+
+	p2 := ClassPolicyMatcher{Class: []string{"os-pkgs", "lang-pkgs"}}
+	assert.Equal(t, true, p2.IsMatch(types.Report{}, types.Result{Class: "os-pkgs"}, types.DetectedVulnerability{}))
+	assert.Equal(t, true, p2.IsMatch(types.Report{}, types.Result{Class: "lang-pkgs"}, types.DetectedVulnerability{}))
+}
+
 func TestCVSSPolicyMatcher(t *testing.T) {
 	t.Run("ScoreLowerThan", func(t *testing.T) {
 		p := CVSSPolicyMatcher{CVSS: CVSSPolicyMatcherCVSS{ScoreLowerThan: 5}}
