@@ -8,6 +8,7 @@ import (
 
 	trivydbtypes "github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/types"
+	"github.com/goark/go-cvss/v3/metric"
 	"gopkg.in/yaml.v3"
 )
 
@@ -78,7 +79,7 @@ func StringAbbreviate(str string, maxLength int) string {
 	return str[0:maxLength] + "..."
 }
 
-func FindVulnerabilityCVSSV3(vuln types.DetectedVulnerability) (string, float64) {
+func FindVulnerabilityCVSSV3(vuln types.DetectedVulnerability) (string, float64, *metric.Base) {
 	cvss := trivydbtypes.CVSS{}
 	for _, s := range cvssSources {
 		if c, ok := vuln.CVSS[s]; ok {
@@ -86,7 +87,16 @@ func FindVulnerabilityCVSSV3(vuln types.DetectedVulnerability) (string, float64)
 			break
 		}
 	}
-	return cvss.V3Vector, cvss.V3Score
+
+	var cvssBaseMetric *metric.Base
+	if cvss.V3Vector != "" {
+		bm, err := metric.NewBase().Decode(cvss.V3Vector)
+		if err == nil && bm.Ver != metric.VUnknown {
+			cvssBaseMetric = bm
+		}
+	}
+
+	return cvss.V3Vector, cvss.V3Score, cvssBaseMetric
 }
 
 type StringArray []string

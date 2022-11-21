@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/aquasecurity/trivy/pkg/types"
-	"github.com/goark/go-cvss/v3/metric"
 	"gopkg.in/yaml.v3"
 )
 
@@ -185,17 +184,9 @@ type CVSSPolicyMatcherCVSS struct {
 }
 
 func (p *CVSSPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
+	_, cvssScore, cvssBaseMetric := FindVulnerabilityCVSSV3(vuln)
+
 	isMatch := true
-
-	cvssVector, cvssScore := FindVulnerabilityCVSSV3(vuln)
-	var cvssBaseMetric *metric.Base
-	if cvssVector != "" {
-		bm, err := metric.NewBase().Decode(cvssVector)
-		if err == nil && bm.Ver != metric.VUnknown {
-			cvssBaseMetric = bm
-		}
-	}
-
 	if p.CVSS.ScoreLowerThan != 0 && cvssScore >= p.CVSS.ScoreLowerThan {
 		isMatch = false
 	}
@@ -220,7 +211,6 @@ func (p *CVSSPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln 
 	if len(p.CVSS.A) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.A, cvssBaseMetric.A.String())) {
 		isMatch = false
 	}
-
 	return isMatch
 }
 

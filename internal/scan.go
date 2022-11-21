@@ -134,7 +134,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 	}
 
 	logDetails := func(logger *log.Logger) {
-		cvssVector, cvssScore := FindVulnerabilityCVSSV3(vuln)
+		cvssVector, cvssScore, _ := FindVulnerabilityCVSSV3(vuln)
 		logger.Printf("ID: %s\n", vuln.VulnerabilityID)
 		logger.Printf("Title: %s\n", title)
 		logger.Printf("Artifact: %s\n", report.ArtifactName)
@@ -463,13 +463,13 @@ type PolicyBasedMitigationTask struct {
 }
 
 func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln types.DetectedVulnerability, manualMitigationTasks []ManualMitigationTask, policyBasedMitigationTasks []PolicyBasedMitigationTask, footer string) string {
-	cvssVector, cvssScore := FindVulnerabilityCVSSV3(vuln)
+	cvssVector, cvssScore, _ := FindVulnerabilityCVSSV3(vuln)
 
 	table := StringSanitize(fmt.Sprintf(`
 | Key | Value
 |---|---
 | ID | %s
-| CVSS | %.1f
+| CVSS Score | %.1f
 | CVSS Vector | %s
 | Artifact | %s
 | Package | %s

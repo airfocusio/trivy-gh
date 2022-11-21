@@ -59,7 +59,7 @@ func TestRenderGithubIssueBody(t *testing.T) {
 | Key | Value
 |---|---
 | ID | CVE-2011-3374
-| CVSS | 3.7
+| CVSS Score | 3.7
 | CVSS Vector | CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N
 | Artifact | debian:11
 | Package | apt
