@@ -28,7 +28,7 @@ policies:
   mitigate: no-public-networking
 - matchers:
   - cvss:
-      scoreLowerThan: 7.8
+      scoreLowerThan: 9.5
   ignore: true
 - matchers:
   - id:

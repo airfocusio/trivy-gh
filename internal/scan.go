@@ -310,15 +310,15 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 			if s.dry {
 				s.logger.Info.Printf("Skipped updating issue %q (#%d) [dry run]\n", *issue.Title, *existingIssue.Number)
 				logDetails(s.logger.CloneNested().Info)
-				return nil, nil
+				return existingIssue.Number, nil
 			} else if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
 				s.logger.Debug.Printf("Skipped updating issue %q (#%d) [limit exceeded]\n", *issue.Title, *existingIssue.Number)
 				logDetails(s.logger.CloneNested().Debug)
-				return nil, nil
+				return existingIssue.Number, nil
 			} else {
 				_, _, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *existingIssue.Number, &issue)
 				if err != nil {
-					return nil, err
+					return existingIssue.Number, err
 				}
 				s.logger.Info.Printf("Updated issue %q (#%d)\n", *issue.Title, *existingIssue.Number)
 				logDetails(s.logger.CloneNested().Info)
@@ -326,7 +326,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 				return existingIssue.Number, nil
 			}
 		} else {
-			return nil, nil
+			return existingIssue.Number, nil
 		}
 	}
 }
