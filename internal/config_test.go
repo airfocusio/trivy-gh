@@ -24,7 +24,7 @@ func TestLoadConfig(t *testing.T) {
 				IssueRepoName:  "trivy-gh-test",
 			},
 			Files: []regexp.Regexp{
-				*regexp.MustCompile("^/k8s/.*.yaml"),
+				*regexp.MustCompile(`^/deployment\.yaml$`),
 			},
 			Mitigations: []ConfigMitigation{
 				{
@@ -55,7 +55,7 @@ func TestLoadConfig(t *testing.T) {
 					Match: &AndPolicyMatcher{
 						Inner: []PolicyMatcher{
 							&ArtifactNameShortPolicyMatcher{
-								ArtifactNameShort: []string{"ghcr.io/airfocusio/trivy-gh-test-debian"},
+								ArtifactNameShort: []string{"debian"},
 							},
 							&CVSSPolicyMatcher{
 								CVSS: CVSSPolicyMatcherCVSS{
@@ -71,7 +71,7 @@ func TestLoadConfig(t *testing.T) {
 						Inner: []PolicyMatcher{
 							&CVSSPolicyMatcher{
 								CVSS: CVSSPolicyMatcherCVSS{
-									ScoreLowerThan: 8.5,
+									ScoreLowerThan: 7.8,
 								},
 							},
 						},

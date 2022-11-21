@@ -2,6 +2,7 @@ package internal
 
 import (
 	"os"
+	"path"
 	"regexp"
 	"testing"
 
@@ -10,29 +11,64 @@ import (
 )
 
 func TestFileList(t *testing.T) {
+	dir, err := os.MkdirTemp(os.TempDir(), "trivy-gh")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Mkdir(path.Join(dir, "folder"), 0o755); err != nil {
+		panic(err)
+	}
+	if file, err := os.Create(path.Join(dir, "file1.yaml")); err != nil {
+		panic(err)
+	} else {
+		file.Close()
+	}
+	if file, err := os.Create(path.Join(dir, "file2.yaml")); err != nil {
+		panic(err)
+	} else {
+		file.Close()
+	}
+	if file, err := os.Create(path.Join(dir, "folder", "file3.yaml")); err != nil {
+		panic(err)
+	} else {
+		file.Close()
+	}
+
 	t.Run("Empty", func(t *testing.T) {
-		f, e := FileList("../example", []regexp.Regexp{})
+		f, e := FileList(dir, []regexp.Regexp{})
 		if assert.NoError(t, e) {
 			assert.Equal(t, []string{}, f)
 		}
 	})
 
 	t.Run("Single", func(t *testing.T) {
-		f, e := FileList("../example", []regexp.Regexp{*regexp.MustCompile(`/k8s/`)})
+		f, e := FileList(dir, []regexp.Regexp{*regexp.MustCompile(`^/file\d\.yaml$`)})
 		if assert.NoError(t, e) {
 			assert.Equal(t, []string{
-				"../example/k8s/deployment1.yaml",
-				"../example/k8s/deployment2.yaml",
+				path.Join(dir, "file1.yaml"),
+				path.Join(dir, "file2.yaml"),
 			}, f)
 		}
 	})
 
 	t.Run("Multi", func(t *testing.T) {
-		f, e := FileList("../example", []regexp.Regexp{*regexp.MustCompile(`1\.yaml$`), *regexp.MustCompile(`2\.yaml$`)})
+		f, e := FileList(dir, []regexp.Regexp{*regexp.MustCompile(`file1\.yaml$`), *regexp.MustCompile(`file2\.yaml$`)})
 		if assert.NoError(t, e) {
 			assert.Equal(t, []string{
-				"../example/k8s/deployment1.yaml",
-				"../example/k8s/deployment2.yaml",
+				path.Join(dir, "file1.yaml"),
+				path.Join(dir, "file2.yaml"),
+			}, f)
+		}
+	})
+
+	t.Run("Subfolder", func(t *testing.T) {
+		f, e := FileList(dir, []regexp.Regexp{*regexp.MustCompile(`\.yaml$`)})
+		if assert.NoError(t, e) {
+			assert.Equal(t, []string{
+				path.Join(dir, "file1.yaml"),
+				path.Join(dir, "file2.yaml"),
+				path.Join(dir, "folder", "file3.yaml"),
 			}, f)
 		}
 	})

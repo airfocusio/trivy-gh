@@ -35,13 +35,13 @@ func TestOrPolicyMatcher(t *testing.T) {
 }
 
 func TestArtifactNameShortPolicyMatcher(t *testing.T) {
-	p1 := ArtifactNameShortPolicyMatcher{ArtifactNameShort: []string{"ghcr.io/airfocusio/trivy-gh-test-debian"}}
-	assert.Equal(t, true, p1.IsMatch(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-debian:11"}, types.Result{}, types.DetectedVulnerability{}))
-	assert.Equal(t, false, p1.IsMatch(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-ubuntu:22.04"}, types.Result{}, types.DetectedVulnerability{}))
+	p1 := ArtifactNameShortPolicyMatcher{ArtifactNameShort: []string{"debian"}}
+	assert.Equal(t, true, p1.IsMatch(types.Report{ArtifactName: "debian:11"}, types.Result{}, types.DetectedVulnerability{}))
+	assert.Equal(t, false, p1.IsMatch(types.Report{ArtifactName: "ubuntu:22.04"}, types.Result{}, types.DetectedVulnerability{}))
 
-	p2 := ArtifactNameShortPolicyMatcher{ArtifactNameShort: []string{"ghcr.io/airfocusio/trivy-gh-test-debian", "ghcr.io/airfocusio/trivy-gh-test-ubuntu"}}
-	assert.Equal(t, true, p2.IsMatch(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-debian:11"}, types.Result{}, types.DetectedVulnerability{}))
-	assert.Equal(t, true, p2.IsMatch(types.Report{ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-ubuntu:22.04"}, types.Result{}, types.DetectedVulnerability{}))
+	p2 := ArtifactNameShortPolicyMatcher{ArtifactNameShort: []string{"debian", "ubuntu"}}
+	assert.Equal(t, true, p2.IsMatch(types.Report{ArtifactName: "debian:11"}, types.Result{}, types.DetectedVulnerability{}))
+	assert.Equal(t, true, p2.IsMatch(types.Report{ArtifactName: "ubuntu:22.04"}, types.Result{}, types.DetectedVulnerability{}))
 }
 
 func TestPackageNamePolicyMatcher(t *testing.T) {

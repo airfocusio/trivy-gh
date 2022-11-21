@@ -2,8 +2,10 @@ package internal
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,15 +18,24 @@ import (
 )
 
 func TestScanScrapeFile(t *testing.T) {
+	file := path.Join(os.TempDir(), fmt.Sprintf("trivy-gh-%d.yaml", time.Now().UnixNano()))
+	if err := ioutil.WriteFile(file, []byte(`
+foo:
+- image: image1:v1
+- bar:
+    image: image2:v1
+---
+image: image3:v1
+`), 0o644); err != nil {
+		panic(err)
+	}
+	defer os.Remove(file)
+
 	scan := NewScan(NewNullLogger(), Config{}, "../example", true, 0, 0)
 
-	f1, e1 := scan.ScrapeFile("../example/k8s/deployment1.yaml")
-	assert.NoError(t, e1)
-	assert.Equal(t, []string{"ghcr.io/airfocusio/trivy-gh-test-debian:11", "ghcr.io/airfocusio/trivy-gh-test-ubuntu:22.04"}, f1)
-
-	f2, e2 := scan.ScrapeFile("../example/k8s/deployment2.yaml")
-	assert.NoError(t, e2)
-	assert.Equal(t, []string{"ghcr.io/airfocusio/trivy-gh-test-alpine:3.14", "ghcr.io/airfocusio/trivy-gh-test-debian:11"}, f2)
+	if files, err := scan.ScrapeFile(file); assert.NoError(t, err) {
+		assert.Equal(t, []string{"image1:v1", "image2:v1", "image3:v1"}, files)
+	}
 }
 
 func TestFindMatchingPolicies(t *testing.T) {
@@ -50,7 +61,7 @@ func TestRenderGithubIssueBody(t *testing.T) {
 | ID | CVE-2011-3374
 | CVSS | 3.7
 | CVSS Vector | CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N
-| Artifact | ghcr.io/airfocusio/trivy-gh-test-debian:11
+| Artifact | debian:11
 | Package | apt
 | Installed Version | 2.2.4
 | Fixed Version |
@@ -77,7 +88,7 @@ https://domain.com/path2
 
 <!-- id=abc123 -->
 `, "\n "), scan.RenderGithubIssueBody(types.Report{
-		ArtifactName: "ghcr.io/airfocusio/trivy-gh-test-debian:11",
+		ArtifactName: "debian:11",
 	}, types.Result{}, types.DetectedVulnerability{
 		VulnerabilityID:  "CVE-2011-3374",
 		PkgName:          "apt",

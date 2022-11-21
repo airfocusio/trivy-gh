@@ -1,8 +1,7 @@
 github:
   token: ${GITHUB_TOKEN}
   issueRepo: airfocusio/trivy-gh-test
-files:
-- ^/k8s/.*.yaml
+files: ^/deployment\.yaml$
 mitigations:
 - key: not-used
   label: Package not used
@@ -22,14 +21,14 @@ policies:
     This container is purely internal.
     So we can ignore it.
   matchers:
-  - artifactNameShort: ghcr.io/airfocusio/trivy-gh-test-debian
+  - artifactNameShort: debian
   - cvss:
       av:
       - N
   mitigate: no-public-networking
 - matchers:
   - cvss:
-      scoreLowerThan: 8.5
+      scoreLowerThan: 7.8
   ignore: true
 - matchers:
   - id:
