@@ -10,11 +10,13 @@ import (
 
 var (
 	scanCmdDirectory        string
+	scanCmdConfig           string
 	scanCmdDryRun           bool
 	scanCmdIssueCreateLimit int
 	scanCmdIssueUpdateLimit int
 	scanCmdRegisterFlags    = func(cmd *cobra.Command) {
 		cmd.Flags().StringVar(&scanCmdDirectory, "dir", ".", "dir")
+		cmd.Flags().StringVarP(&scanCmdConfig, "config", "c", ".trivy-gh.yaml", "config")
 		cmd.Flags().BoolVar(&scanCmdDryRun, "dry-run", false, "dry-run")
 		cmd.Flags().IntVar(&scanCmdIssueCreateLimit, "issue-create-limit", -1, "issue-create-limit")
 		cmd.Flags().IntVar(&scanCmdIssueUpdateLimit, "issue-update-limit", -1, "issue-update-limit")
@@ -27,7 +29,7 @@ var (
 		Args:          cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := scanCmdDirectory
-			fileBytes, err := ioutil.ReadFile(internal.FileResolvePath(dir, ".trivy-gh.yaml"))
+			fileBytes, err := ioutil.ReadFile(internal.FileResolvePath(dir, scanCmdConfig))
 			if err != nil {
 				return fmt.Errorf("unable to initialize: %w", err)
 			}
