@@ -284,6 +284,18 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 			vuln.VulnerabilityID,
 			artifactNameShortToLabel(artifactNameShort),
 		}
+		for _, l := range existingIssue.Labels {
+			labelAlreadyExists := false
+			for _, l2 := range labels {
+				if l2 == *l.Name {
+					labelAlreadyExists = true
+					break
+				}
+			}
+			if !labelAlreadyExists {
+				labels = append(labels, *l.Name)
+			}
+		}
 		state := "open"
 		for _, p := range manualMitigationTasks {
 			if p.Done {

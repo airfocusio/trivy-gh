@@ -221,7 +221,6 @@ func TestScan(t *testing.T) {
 	}()
 
 	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
-		assert.NoError(t, err)
 		assert.Contains(t, *issue.Body, fmt.Sprintf("id=%s/%s/%s", artifactNameShort, packageName, vulnerabilityId))
 		assert.Equal(t, "open", *issue.State)
 	}
@@ -231,34 +230,51 @@ func TestScan(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Empty(t, issueNumbers2)
 	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
-		assert.NoError(t, err)
 		assert.Equal(t, "open", *issue.State)
 	}
 
-	// close as it is fixed
-	issueNumbers3, err := scan.ProcessFixedIssues(artifactNameShort, []int{})
-	assert.NoError(t, err)
-	assert.Equal(t, []int{issueNumber}, issueNumbers3)
-	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
+	// keep additional labels
+	additionalLabelName := "additional"
+	if _, _, err := scan.githubClient.Issues.Edit(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber, &github.IssueRequest{
+		Labels: &[]string{vulnerabilityId, artifactNameShortToLabel(artifactNameShort), additionalLabelName},
+	}); assert.NoError(t, err) {
+		issueNumbers3, err := scan.ProcessFixedIssues(artifactNameShort, []int{issueNumber})
 		assert.NoError(t, err)
+		assert.Empty(t, issueNumbers3)
+		if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
+			assert.Equal(t, "open", *issue.State)
+			containsAdditionalLabel := false
+			for _, l := range issue.Labels {
+				if *l.Name == additionalLabelName {
+					containsAdditionalLabel = true
+					break
+				}
+			}
+			assert.True(t, containsAdditionalLabel)
+		}
+	}
+
+	// close as it is fixed
+	issueNumbers4, err := scan.ProcessFixedIssues(artifactNameShort, []int{})
+	assert.NoError(t, err)
+	assert.Equal(t, []int{issueNumber}, issueNumbers4)
+	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
 		assert.Equal(t, "closed", *issue.State)
 	}
 
 	// reopen as it has come back
-	issueNumbers4, err := scan.ProcessUnfixedIssues(artifactNameShort, []*types.Report{&report1})
+	issueNumbers5, err := scan.ProcessUnfixedIssues(artifactNameShort, []*types.Report{&report1})
 	assert.NoError(t, err)
-	assert.Equal(t, []int{issueNumber}, issueNumbers4)
+	assert.Equal(t, []int{issueNumber}, issueNumbers5)
 	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
-		assert.NoError(t, err)
 		assert.Equal(t, "open", *issue.State)
 	}
 
 	// close again as it is mitigated by policy
-	issueNumbers, err := scan.ProcessUnfixedIssues(artifactNameShort, []*types.Report{&report2})
+	issueNumbers6, err := scan.ProcessUnfixedIssues(artifactNameShort, []*types.Report{&report2})
 	assert.NoError(t, err)
-	assert.Equal(t, []int{issueNumber}, issueNumbers)
+	assert.Equal(t, []int{issueNumber}, issueNumbers6)
 	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
-		assert.NoError(t, err)
 		assert.Equal(t, "closed", *issue.State)
 		assert.Contains(t, *issue.Body, fmt.Sprintf("policy-based-mitigation=%s", mitigationKey))
 	}
