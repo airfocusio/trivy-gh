@@ -166,10 +166,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 	}
 
 	// find existing issue
-	existingIssuesSearchLabels := []string{
-		vuln.VulnerabilityID,
-		artifactNameShortToLabel(artifactNameShort),
-	}
+	existingIssuesSearchLabels := generateVulnerabilitySearchExistingLabels(artifactNameShort, vuln)
 	existingIssuesSearchState := "all"
 	existingIssues, existingIssuesRes, err := s.githubClient.Issues.ListByRepo(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &github.IssueListByRepoOptions{
 		Labels: existingIssuesSearchLabels,
@@ -204,10 +201,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 
 		// create new issue
 		body := s.RenderGithubIssueBody(report, res, vuln, manualMitigationTasks, policyBasedMitigationTasks, idFooter)
-		labels := []string{
-			vuln.VulnerabilityID,
-			artifactNameShortToLabel(artifactNameShort),
-		}
+		labels := generateVulnerabilityLabels(artifactNameShort, vuln)
 		state := "open"
 		for _, p := range manualMitigationTasks {
 			if p.Done {
@@ -280,10 +274,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 
 		// update existing issue if needed
 		body := s.RenderGithubIssueBody(report, res, vuln, manualMitigationTasks, policyBasedMitigationTasks, idFooter)
-		labels := []string{
-			vuln.VulnerabilityID,
-			artifactNameShortToLabel(artifactNameShort),
-		}
+		labels := generateVulnerabilityLabels(artifactNameShort, vuln)
 		for _, l := range existingIssue.Labels {
 			labelAlreadyExists := false
 			for _, l2 := range labels {
@@ -362,10 +353,7 @@ func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers 
 	issueNumbers := []int{}
 
 	// find all open issue that have not been seen unfixed
-	openIssuesSearchLabels := []string{}
-	if artifactNameShort != "" {
-		openIssuesSearchLabels = append(openIssuesSearchLabels, artifactNameShortToLabel(artifactNameShort))
-	}
+	openIssuesSearchLabels := generateVulnerabilitySearchOldLabels(artifactNameShort)
 	openIssuesSearchState := "open"
 	openIssues, openIssuesRes, err := s.githubClient.Issues.ListByRepo(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &github.IssueListByRepoOptions{
 		Labels: openIssuesSearchLabels,
@@ -484,14 +472,14 @@ func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln
 | Key | Value
 |---|---
 | ID | %s
-| CVSS Score | %.1f
+| CVSS Score | %s (%.1f)
 | CVSS Vector | %s
 | Artifact | %s
 | Package | %s
 | Installed Version | %s
 | Fixed Version | %s
 | Published | %v
-`, vuln.VulnerabilityID, cvssScore, cvssVector, report.ArtifactName, vuln.PkgName, vuln.InstalledVersion, vuln.FixedVersion, vuln.PublishedDate))
+`, vuln.VulnerabilityID, RenderCVSSScoreString(cvssScore), cvssScore, cvssVector, report.ArtifactName, vuln.PkgName, vuln.InstalledVersion, vuln.FixedVersion, vuln.PublishedDate))
 
 	manualMitigations := "### Manual mitigations\n\n"
 	for _, m := range manualMitigationTasks {
@@ -525,6 +513,22 @@ func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln
 	}
 	references = StringSanitize(references)
 
+	// cvssDetails := ""
+	// if cvssMetric != nil {
+	// 	lineTemplate := "%s: %s\n\n > %s"
+	// 	lines := []string{
+	// 		fmt.Sprintf(lineTemplate, AVName, AVValueNames[cvssMetric.AV], AVValueDescriptions[cvssMetric.AV]),
+	// 		fmt.Sprintf(lineTemplate, ACName, ACValueNames[cvssMetric.AC], ACValueDescriptions[cvssMetric.AC]),
+	// 		fmt.Sprintf(lineTemplate, PRName, PRValueNames[cvssMetric.PR], PRValueDescriptions[cvssMetric.PR]),
+	// 		fmt.Sprintf(lineTemplate, UIName, UIValueNames[cvssMetric.UI], UIValueDescriptions[cvssMetric.UI]),
+	// 		fmt.Sprintf(lineTemplate, SName, SValueNames[cvssMetric.S], SValueDescriptions[cvssMetric.S]),
+	// 		fmt.Sprintf(lineTemplate, CName, CValueNames[cvssMetric.C], CValueDescriptions[cvssMetric.C]),
+	// 		fmt.Sprintf(lineTemplate, IName, IValueNames[cvssMetric.I], IValueDescriptions[cvssMetric.I]),
+	// 		fmt.Sprintf(lineTemplate, AName, AValueNames[cvssMetric.A], AValueDescriptions[cvssMetric.A]),
+	// 	}
+	// 	cvssDetails = fmt.Sprintf("<details>\n<summary>%s</summary>\n\n%s</details>", cvssVector, strings.Join(lines, "\n\n"))
+	// }
+
 	return strings.Join([]string{table, manualMitigations, policyBasedMitigations, description, references, footer}, "\n\n")
 }
 
@@ -552,32 +556,56 @@ func (s *Scan) ScrapeFile(file string) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse file %s as yaml: %w", file, err)
 		}
-		result = append(result, extractArtifactsFromRawYaml(*fileYaml)...)
+		result = append(result, s.extractArtifactsFromRawYaml(*fileYaml)...)
 	}
 
 	return result, nil
 }
 
-func extractArtifactsFromRawYaml(node interface{}) []string {
+func (s *Scan) extractArtifactsFromRawYaml(node interface{}) []string {
 	results := []string{}
 	if m, ok := node.(map[string]interface{}); ok {
 		for k, v := range m {
 			if i, ok := v.(string); ok && k == "image" {
 				results = append(results, i)
 			} else {
-				results = append(results, extractArtifactsFromRawYaml(v)...)
+				results = append(results, s.extractArtifactsFromRawYaml(v)...)
 			}
 		}
 	}
 	if a, ok := node.([]interface{}); ok {
 		for _, e := range a {
-			results = append(results, extractArtifactsFromRawYaml(e)...)
+			results = append(results, s.extractArtifactsFromRawYaml(e)...)
 		}
 	}
 	return results
 }
 
-func artifactNameShortToLabel(ans string) string {
-	segments := strings.Split(ans, "/")
+func artifactNameShortToLabel(artifactNameShort string) string {
+	segments := strings.Split(artifactNameShort, "/")
 	return StringAbbreviate(segments[len(segments)-1], 47)
+}
+
+func generateVulnerabilityLabels(artifactNameShort string, vuln types.DetectedVulnerability) []string {
+	_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln)
+	return []string{
+		vuln.VulnerabilityID,
+		artifactNameShortToLabel(artifactNameShort),
+		RenderCVSSScoreString(cvssScore),
+	}
+}
+
+func generateVulnerabilitySearchExistingLabels(artifactNameShort string, vuln types.DetectedVulnerability) []string {
+	return []string{
+		vuln.VulnerabilityID,
+		artifactNameShortToLabel(artifactNameShort),
+	}
+}
+
+func generateVulnerabilitySearchOldLabels(artifactNameShort string) []string {
+	labels := []string{}
+	if artifactNameShort != "" {
+		labels = append(labels, artifactNameShortToLabel(artifactNameShort))
+	}
+	return labels
 }
