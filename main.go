@@ -19,7 +19,7 @@ func main() {
 	cmd.Version = cmd.FullVersion{Version: version, Commit: commit, Date: date, BuiltBy: builtBy}
 	if err := cmd.Execute(); err != nil {
 		logger := internal.NewLogger(false)
-		logger.Error.Printf("Error: %v\n", err)
+		logger.Info.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 }
