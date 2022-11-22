@@ -218,32 +218,35 @@ type CVSSPolicyMatcherCVSS struct {
 func (p *CVSSPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
 	_, cvssScore, cvssBaseMetric := FindVulnerabilityCVSSV3(vuln)
 
-	isMatch := true
 	if p.CVSS.ScoreLowerThan != 0 && cvssScore >= p.CVSS.ScoreLowerThan {
-		isMatch = false
+		return false
 	}
 	if len(p.CVSS.AV) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.AV, cvssBaseMetric.AV.String())) {
-		isMatch = false
+		return false
 	}
 	if len(p.CVSS.AC) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.AC, cvssBaseMetric.AC.String())) {
-		isMatch = false
+		return false
 	}
 	if len(p.CVSS.PR) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.PR, cvssBaseMetric.PR.String())) {
-		isMatch = false
+		return false
+	}
+	if len(p.CVSS.UI) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.UI, cvssBaseMetric.UI.String())) {
+		return false
 	}
 	if len(p.CVSS.S) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.S, cvssBaseMetric.S.String())) {
-		isMatch = false
+		return false
 	}
 	if len(p.CVSS.C) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.C, cvssBaseMetric.C.String())) {
-		isMatch = false
+		return false
 	}
 	if len(p.CVSS.I) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.I, cvssBaseMetric.I.String())) {
-		isMatch = false
+		return false
 	}
 	if len(p.CVSS.A) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.A, cvssBaseMetric.A.String())) {
-		isMatch = false
+		return false
 	}
-	return isMatch
+
+	return true
 }
 
 func (c *CVSSPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {

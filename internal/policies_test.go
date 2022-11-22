@@ -99,6 +99,15 @@ func TestCVSSPolicyMatcher(t *testing.T) {
 		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{}}}}))
 	})
 
+	t.Run("UI", func(t *testing.T) {
+		p := CVSSPolicyMatcher{CVSS: CVSSPolicyMatcherCVSS{UI: []string{"R"}}}
+		assert.Equal(t, true, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:R/S:U/C:N/I:N/A:N"}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:N"}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0"}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "MALFORMED"}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{}}}}))
+	})
+
 	t.Run("S", func(t *testing.T) {
 		p := CVSSPolicyMatcher{CVSS: CVSSPolicyMatcherCVSS{S: []string{"C"}}}
 		assert.Equal(t, true, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:N/S:C/C:N/I:N/A:N"}}}}))
@@ -133,5 +142,19 @@ func TestCVSSPolicyMatcher(t *testing.T) {
 		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0"}}}}))
 		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "MALFORMED"}}}}))
 		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{}}}}))
+	})
+
+	t.Run("All", func(t *testing.T) {
+		p := CVSSPolicyMatcher{CVSS: CVSSPolicyMatcherCVSS{ScoreLowerThan: 5, AV: []string{"N"}, AC: []string{"H"}, PR: []string{"H"}, UI: []string{"R"}, S: []string{"C"}, C: []string{"H"}, I: []string{"H"}, A: []string{"H"}}}
+		assert.Equal(t, true, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:R/S:C/C:H/I:H/A:H", V3Score: 4}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:R/S:C/C:H/I:H/A:H", V3Score: 5}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:L/AC:H/PR:H/UI:R/S:C/C:H/I:H/A:H", V3Score: 4}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:L/PR:H/UI:R/S:C/C:H/I:H/A:H", V3Score: 4}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:L/UI:R/S:C/C:H/I:H/A:H", V3Score: 4}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:N/S:C/C:H/I:H/A:H", V3Score: 4}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:R/S:U/C:H/I:H/A:H", V3Score: 4}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:R/S:C/C:N/I:H/A:H", V3Score: 4}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:R/S:C/C:H/I:N/A:H", V3Score: 4}}}}))
+		assert.Equal(t, false, p.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{Vulnerability: trivydbtypes.Vulnerability{CVSS: trivydbtypes.VendorCVSS{"nvd": trivydbtypes.CVSS{V3Vector: "CVSS:3.0/AV:N/AC:H/PR:H/UI:R/S:C/C:H/I:H/A:N", V3Score: 4}}}}))
 	})
 }
