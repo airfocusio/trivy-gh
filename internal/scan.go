@@ -95,12 +95,12 @@ func (s *Scan) Run() error {
 			reports = append(reports, report)
 		}
 		issueNumbers, err := s.ProcessUnfixedIssues(artifactNameShort, reports)
+		unnest()
+
 		if err != nil {
-			unnest()
 			return err
 		}
 		unfixedIssueNumbers = append(unfixedIssueNumbers, issueNumbers...)
-		unnest()
 	}
 
 	if _, err := s.ProcessFixedIssues("", unfixedIssueNumbers); err != nil {
@@ -168,7 +168,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 	// find existing issue
 	existingIssuesSearchLabels := []string{
 		vuln.VulnerabilityID,
-		artifactNameShort,
+		artifactNameShortToLabel(artifactNameShort),
 	}
 	existingIssuesSearchState := "all"
 	existingIssues, existingIssuesRes, err := s.githubClient.Issues.ListByRepo(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &github.IssueListByRepoOptions{
@@ -206,8 +206,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 		body := s.RenderGithubIssueBody(report, res, vuln, manualMitigationTasks, policyBasedMitigationTasks, idFooter)
 		labels := []string{
 			vuln.VulnerabilityID,
-			artifactNameShort,
-			vuln.Severity,
+			artifactNameShortToLabel(artifactNameShort),
 		}
 		state := "open"
 		for _, p := range manualMitigationTasks {
@@ -283,8 +282,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 		body := s.RenderGithubIssueBody(report, res, vuln, manualMitigationTasks, policyBasedMitigationTasks, idFooter)
 		labels := []string{
 			vuln.VulnerabilityID,
-			artifactNameShort,
-			vuln.Severity,
+			artifactNameShortToLabel(artifactNameShort),
 		}
 		state := "open"
 		for _, p := range manualMitigationTasks {
@@ -354,7 +352,7 @@ func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers 
 	// find all open issue that have not been seen unfixed
 	openIssuesSearchLabels := []string{}
 	if artifactNameShort != "" {
-		openIssuesSearchLabels = append(openIssuesSearchLabels, artifactNameShort)
+		openIssuesSearchLabels = append(openIssuesSearchLabels, artifactNameShortToLabel(artifactNameShort))
 	}
 	openIssuesSearchState := "open"
 	openIssues, openIssuesRes, err := s.githubClient.Issues.ListByRepo(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &github.IssueListByRepoOptions{
@@ -383,6 +381,9 @@ func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers 
 	}
 
 	for _, fixedIssue := range fixedIssues {
+		s.logger.Info.Printf("Not found vulnerability %q anymore\n", *fixedIssue.Title)
+		unnest := s.logger.Nest()
+
 		state := "closed"
 		issue := github.IssueRequest{
 			State: &state,
@@ -401,6 +402,8 @@ func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers 
 			s.logger.Info.Printf("Updated issue #%d\n", *fixedIssue.Number)
 			s.issuesUpdated = s.issuesUpdated + 1
 		}
+
+		unnest()
 	}
 
 	return issueNumbers, nil
@@ -560,4 +563,9 @@ func extractArtifactsFromRawYaml(node interface{}) []string {
 		}
 	}
 	return results
+}
+
+func artifactNameShortToLabel(ans string) string {
+	segments := strings.Split(ans, "/")
+	return StringAbbreviate(segments[len(segments)-1], 47)
 }
