@@ -589,23 +589,23 @@ func artifactNameShortToLabel(artifactNameShort string) string {
 func generateVulnerabilityLabels(artifactNameShort string, vuln types.DetectedVulnerability) []string {
 	_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln)
 	return []string{
-		vuln.VulnerabilityID,
-		artifactNameShortToLabel(artifactNameShort),
-		RenderCVSSScoreString(cvssScore),
+		"i:" + vuln.VulnerabilityID,
+		"a:" + artifactNameShortToLabel(artifactNameShort),
+		"s:" + RenderCVSSScoreString(cvssScore),
 	}
 }
 
 func generateVulnerabilitySearchExistingLabels(artifactNameShort string, vuln types.DetectedVulnerability) []string {
 	return []string{
-		vuln.VulnerabilityID,
-		artifactNameShortToLabel(artifactNameShort),
+		"i:" + vuln.VulnerabilityID,
+		"a:" + artifactNameShortToLabel(artifactNameShort),
 	}
 }
 
 func generateVulnerabilitySearchOldLabels(artifactNameShort string) []string {
 	labels := []string{}
 	if artifactNameShort != "" {
-		labels = append(labels, artifactNameShortToLabel(artifactNameShort))
+		labels = append(labels, "a:"+artifactNameShortToLabel(artifactNameShort))
 	}
 	return labels
 }

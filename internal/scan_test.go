@@ -125,11 +125,12 @@ func TestScan(t *testing.T) {
 	}
 
 	rand.Seed(time.Now().Unix())
-	artifactNameShort := "test-artifact-" + strconv.Itoa(rand.Int())
+	randNum := rand.Int()
+	artifactNameShort := "test-artifact-" + strconv.Itoa(randNum)
 	artifactName := artifactNameShort + ":1.0.0"
-	packageName := "test-package-" + strconv.Itoa(rand.Int())
-	vulnerabilityId := "TEST-" + strconv.Itoa(rand.Int())
-	mitigationKey := "too-unimportant-" + strconv.Itoa(rand.Int())
+	packageName := "test-package-" + strconv.Itoa(randNum)
+	vulnerabilityId := "TEST-" + strconv.Itoa(randNum)
+	mitigationKey := "too-unimportant-" + strconv.Itoa(randNum)
 
 	scan := NewScan(NewNullLogger(), Config{
 		Github: ConfigGithub{
@@ -216,8 +217,9 @@ func TestScan(t *testing.T) {
 		scan.githubClient.Issues.Edit(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber, &github.IssueRequest{
 			State: &closed,
 		})
-		scan.githubClient.Issues.DeleteLabel(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, artifactNameShortToLabel(artifactNameShort))
-		scan.githubClient.Issues.DeleteLabel(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, vulnerabilityId)
+		for _, l := range generateVulnerabilityLabels(artifactNameShort, report1.Results[0].Vulnerabilities[0]) {
+			scan.githubClient.Issues.DeleteLabel(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, l)
+		}
 	}()
 
 	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
@@ -235,8 +237,9 @@ func TestScan(t *testing.T) {
 
 	// keep additional labels
 	additionalLabelName := "additional"
+	additionalWithLabels := append(generateVulnerabilityLabels(artifactNameShort, report1.Results[0].Vulnerabilities[0]), additionalLabelName)
 	if _, _, err := scan.githubClient.Issues.Edit(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber, &github.IssueRequest{
-		Labels: &[]string{vulnerabilityId, artifactNameShortToLabel(artifactNameShort), additionalLabelName},
+		Labels: &additionalWithLabels,
 	}); assert.NoError(t, err) {
 		issueNumbers3, err := scan.ProcessFixedIssues(artifactNameShort, []int{issueNumber})
 		assert.NoError(t, err)
