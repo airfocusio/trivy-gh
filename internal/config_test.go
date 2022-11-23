@@ -38,6 +38,16 @@ func TestLoadConfig(t *testing.T) {
 			},
 			Policies: []ConfigPolicy{
 				{
+					Match: &AndPolicyMatcher{
+						Inner: []PolicyMatcher{
+							&IDPolicyMatcher{
+								ID: []string{"CVE-0"},
+							},
+						},
+					},
+					Ignore: true,
+				},
+				{
 					Comment: "Can only be executed from inside the container.\n",
 					Match: &AndPolicyMatcher{
 						Inner: []PolicyMatcher{
@@ -60,16 +70,6 @@ func TestLoadConfig(t *testing.T) {
 						},
 					},
 					Mitigate: []string{"no-public-networking"},
-				},
-				{
-					Match: &AndPolicyMatcher{
-						Inner: []PolicyMatcher{
-							&IDPolicyMatcher{
-								ID: []string{"CVE-0"},
-							},
-						},
-					},
-					Ignore: true,
 				},
 			},
 		}

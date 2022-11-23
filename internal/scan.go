@@ -135,15 +135,8 @@ func (s *Scan) Run() error {
 }
 
 func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report types.Report, res types.Result, vuln types.DetectedVulnerability) (*ProcessedUnfixedVulnerability, error) {
-	// prepare policies
-	matchingPolicies := s.EvaluateMatchingPolicies(report, res, vuln)
-	mitigations := s.EvaluateMitigations(matchingPolicies)
-	policyBasedIgnores := []ConfigPolicy{}
-	for _, p := range matchingPolicies {
-		if p.Ignore {
-			policyBasedIgnores = append(policyBasedIgnores, p)
-		}
-	}
+	policy := s.FindMatchingPolicy(report, res, vuln)
+	mitigations := s.EvaluateMitigations(policy)
 
 	// prepare general data
 	id := fmt.Sprintf("%s/%s/%s", artifactNameShort, vuln.PkgName, vuln.VulnerabilityID)
@@ -156,7 +149,7 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 		title = vuln.VulnerabilityID
 	}
 
-	if len(policyBasedIgnores) > 0 {
+	if policy != nil && policy.Ignore {
 		s.logger.Debug.Printf("Found vulnerability %q [ignored]\n", title)
 		return nil, nil
 	}
@@ -179,14 +172,6 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 			text = text + ": " + StringSanitize(strings.ReplaceAll(m.Policy.Comment, "\n", " "))
 		}
 		s.logger.Info.Printf("Mitigation: %s\n", text)
-	}
-	for _, p := range policyBasedIgnores {
-		if p.Comment == "" {
-			s.logger.Info.Printf("Ignored\n")
-		} else {
-			text := StringSanitize(p.Comment)
-			s.logger.Info.Printf("Ignored: %s\n", text)
-		}
 	}
 
 	// find existing issue
@@ -481,36 +466,37 @@ func (s *Scan) ProcessDashboard(allUnfixedVulnerabilities []ProcessedUnfixedVuln
 	return nil
 }
 
-func (s *Scan) EvaluateMatchingPolicies(report types.Report, res types.Result, vuln types.DetectedVulnerability) []ConfigPolicy {
-	result := []ConfigPolicy{}
+func (s *Scan) FindMatchingPolicy(report types.Report, res types.Result, vuln types.DetectedVulnerability) *ConfigPolicy {
 	for _, p := range s.config.Policies {
 		if p.Match.IsMatch(report, res, vuln) {
-			result = append(result, p)
+			return &p
 		}
 	}
-	return result
+	return nil
 }
 
-func (s *Scan) EvaluateMitigations(matchingPolicies []ConfigPolicy) []Mitigation {
+func (s *Scan) EvaluateMitigations(policy *ConfigPolicy) []Mitigation {
+	if policy == nil {
+		return []Mitigation{}
+	}
+
 	result := []Mitigation{}
-	for _, p := range matchingPolicies {
-		for _, key := range p.Mitigate {
-			var mitigation *ConfigMitigation
-			for _, m := range s.config.Mitigations {
-				if m.Key == key {
-					mitigation = &m
-					break
-				}
+	for _, key := range policy.Mitigate {
+		var mitigation *ConfigMitigation
+		for _, m := range s.config.Mitigations {
+			if m.Key == key {
+				mitigation = &m
+				break
 			}
-			if mitigation == nil {
-				s.logger.Info.Printf("Policy references unknown mitigation %s", key)
-				continue
-			}
-			result = append(result, Mitigation{
-				Mitigation: *mitigation,
-				Policy:     p,
-			})
 		}
+		if mitigation == nil {
+			s.logger.Info.Printf("Policy references unknown mitigation %s", key)
+			continue
+		}
+		result = append(result, Mitigation{
+			Mitigation: *mitigation,
+			Policy:     *policy,
+		})
 	}
 	return result
 }

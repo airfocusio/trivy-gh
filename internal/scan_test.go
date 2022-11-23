@@ -44,7 +44,7 @@ func TestFindMatchingPolicies(t *testing.T) {
 			Policies: []ConfigPolicy{p1},
 		}, "../example", true, 0, 0)
 
-		assert.Equal(t, []ConfigPolicy{p1}, scan.EvaluateMatchingPolicies(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
+		assert.Equal(t, &p1, scan.FindMatchingPolicy(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
 	})
 }
 
