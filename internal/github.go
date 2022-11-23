@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -105,14 +104,6 @@ func extractGithubIssueTasks(body string) []GithubIssueTask {
 		}
 	}
 	return result
-}
-
-func renderGithubIssueTask(done bool, label string) string {
-	x := " "
-	if done {
-		x = "x"
-	}
-	return fmt.Sprintf("- [%s] %s", x, label)
 }
 
 func compareGithubIssues(i1 github.Issue, i2 github.IssueRequest) bool {

@@ -5,10 +5,8 @@ files: ^/deployment\.yaml$
 mitigations:
 - key: not-used
   label: Package not used
-  allowManual: true
 - key: no-public-networking
   label: No public networking
-  allowManual: true
 policies:
 - comment: |
     Can only be executed from inside the container.
@@ -21,15 +19,10 @@ policies:
     This container is purely internal.
     So we can ignore it.
   matchers:
-  - artifactNameShort: debian
   - cvss:
       av:
       - N
   mitigate: no-public-networking
-- matchers:
-  - cvss:
-      scoreLowerThan: 9.5
-  ignore: true
 - matchers:
   - id:
     - CVE-0

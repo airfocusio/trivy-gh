@@ -31,6 +31,19 @@ type Scan struct {
 	githubClient     *github.Client
 }
 
+type Mitigation struct {
+	Mitigation ConfigMitigation
+	Policy     ConfigPolicy
+}
+
+type ProcessedUnfixedVulnerability struct {
+	issueNumber   *int
+	mitigations   []Mitigation
+	report        types.Report
+	result        types.Result
+	vulnerability types.DetectedVulnerability
+}
+
 func NewScan(logger Logger, config Config, dir string, dryRun bool, issueCreateLimit int, issueUpdateLimit int) Scan {
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
@@ -79,6 +92,7 @@ func (s *Scan) Run() error {
 		sort.Strings(artifactGroups[artifactNameShort])
 	}
 
+	allUnfixedVulnerabilities := []ProcessedUnfixedVulnerability{}
 	unfixedIssueNumbers := []int{}
 	for artifactNameShort, artifacts := range artifactGroups {
 		s.logger.Info.Printf("Scanning artifact group %s ...\n", artifactNameShort)
@@ -94,26 +108,36 @@ func (s *Scan) Run() error {
 			}
 			reports = append(reports, report)
 		}
-		issueNumbers, err := s.ProcessUnfixedIssues(artifactNameShort, reports)
+		unfixedVulnerabilities, err := s.ProcessUnfixedVulnerabilities(artifactNameShort, reports)
 		unnest()
 
 		if err != nil {
 			return err
 		}
-		unfixedIssueNumbers = append(unfixedIssueNumbers, issueNumbers...)
+
+		allUnfixedVulnerabilities = append(allUnfixedVulnerabilities, unfixedVulnerabilities...)
+		for _, puv := range unfixedVulnerabilities {
+			if puv.issueNumber != nil {
+				unfixedIssueNumbers = append(unfixedIssueNumbers, *puv.issueNumber)
+			}
+		}
 	}
 
-	if _, err := s.ProcessFixedIssues("", unfixedIssueNumbers); err != nil {
+	if _, err := s.ProcessFixedVulnerabilities("", unfixedIssueNumbers); err != nil {
+		return err
+	}
+
+	if err := s.ProcessDashboard(allUnfixedVulnerabilities); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report, res types.Result, vuln types.DetectedVulnerability) (*int, error) {
+func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report types.Report, res types.Result, vuln types.DetectedVulnerability) (*ProcessedUnfixedVulnerability, error) {
 	// prepare policies
 	matchingPolicies := s.EvaluateMatchingPolicies(report, res, vuln)
-	policyBasedMitigationTasks := s.EvaluatePolicyBasedMitigationTasks(matchingPolicies)
+	mitigations := s.EvaluateMitigations(matchingPolicies)
 	policyBasedIgnores := []ConfigPolicy{}
 	for _, p := range matchingPolicies {
 		if p.Ignore {
@@ -123,7 +147,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 
 	// prepare general data
 	id := fmt.Sprintf("%s/%s/%s", artifactNameShort, vuln.PkgName, vuln.VulnerabilityID)
-	idFooter := fmt.Sprintf("<!-- trivy-gh-id=%s -->", id)
+	idFooter := fmt.Sprintf("trivy-gh-id=%s", id)
 	title := vuln.Title
 	if title == "" {
 		title = StringAbbreviate(vuln.Description, 40)
@@ -149,7 +173,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 	if cvssVector != "" {
 		s.logger.Info.Printf("CVSS: %s (%.1f)\n", cvssVector, cvssScore)
 	}
-	for _, m := range policyBasedMitigationTasks {
+	for _, m := range mitigations {
 		text := StringSanitize(m.Mitigation.Label)
 		if m.Policy.Comment != "" {
 			text = text + ": " + StringSanitize(strings.ReplaceAll(m.Policy.Comment, "\n", " "))
@@ -172,7 +196,7 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 		Labels: existingIssuesSearchLabels,
 		State:  existingIssuesSearchState,
 		ListOptions: github.ListOptions{
-			PerPage: 100,
+			PerPage: 100, // TODO search all issues
 		},
 	})
 	defer existingIssuesRes.Body.Close()
@@ -188,33 +212,20 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 	}
 
 	if existingIssue == nil {
-		manualMitigationTasks := []ManualMitigationTask{}
-		for _, m := range s.config.Mitigations {
-			if !m.AllowManual {
-				continue
-			}
-			manualMitigationTasks = append(manualMitigationTasks, ManualMitigationTask{
-				Mitigation: m,
-				Done:       false,
-			})
+		mitigated := len(mitigations) > 0
+		if mitigated {
+			return &ProcessedUnfixedVulnerability{
+				mitigations:   mitigations,
+				report:        report,
+				result:        res,
+				vulnerability: vuln,
+			}, nil
 		}
 
 		// create new issue
-		body := s.RenderGithubIssueBody(report, res, vuln, manualMitigationTasks, policyBasedMitigationTasks, idFooter)
+		body := s.RenderGithubIssueBody(report, res, vuln, "<!-- "+idFooter+" -->")
 		labels := generateVulnerabilityLabels(artifactNameShort, vuln)
 		state := "open"
-		for _, p := range manualMitigationTasks {
-			if p.Done {
-				state = "closed"
-				break
-			}
-		}
-		for _, p := range policyBasedMitigationTasks {
-			if p.Done {
-				state = "closed"
-				break
-			}
-		}
 		issue := github.IssueRequest{
 			Title:  &title,
 			Body:   &body,
@@ -224,10 +235,20 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 
 		if s.issueCreateLimit >= 0 && s.issuesCreated >= s.issueCreateLimit {
 			s.logger.Info.Printf("Skipped creating issue [limit exceeded]\n")
-			return nil, nil
+			return &ProcessedUnfixedVulnerability{
+				mitigations:   mitigations,
+				report:        report,
+				result:        res,
+				vulnerability: vuln,
+			}, nil
 		} else if s.dryRun {
 			s.logger.Info.Printf("Skipped creating issue [dry run]\n")
-			return nil, nil
+			return &ProcessedUnfixedVulnerability{
+				mitigations:   mitigations,
+				report:        report,
+				result:        res,
+				vulnerability: vuln,
+			}, nil
 		} else {
 			createdIssue, createdIssueRes, err := s.githubClient.Issues.Create(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &issue)
 			defer createdIssueRes.Body.Close()
@@ -235,45 +256,20 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 				return nil, err
 			}
 			s.logger.Info.Printf("Created issue #%d\n", *createdIssue.Number)
-			if *createdIssue.State != state {
-				_, createdIssueRes2, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *createdIssue.Number, &github.IssueRequest{
-					State: &state,
-				})
-				defer createdIssueRes2.Body.Close()
-				if err != nil {
-					return nil, err
-				}
-			}
 			s.issuesCreated = s.issuesCreated + 1
-			return createdIssue.Number, nil
+			return &ProcessedUnfixedVulnerability{
+				issueNumber:   createdIssue.Number,
+				mitigations:   mitigations,
+				report:        report,
+				result:        res,
+				vulnerability: vuln,
+			}, nil
 		}
 	} else {
-		existingIssueBody := ""
-		if existingIssue.Body != nil {
-			existingIssueBody = *existingIssue.Body
-		}
-		existingIssueTasks := extractGithubIssueTasks(existingIssueBody)
-		manualMitigationTasks := []ManualMitigationTask{}
-		for _, m := range s.config.Mitigations {
-			if !m.AllowManual {
-				continue
-			}
-			var task *GithubIssueTask
-			for _, t := range existingIssueTasks {
-				key, ok := t.Params["manual-mitigation"]
-				if ok && key == m.Key {
-					task = &t
-					break
-				}
-			}
-			manualMitigationTasks = append(manualMitigationTasks, ManualMitigationTask{
-				Mitigation: m,
-				Done:       task != nil && task.Done,
-			})
-		}
+		mitigated := len(mitigations) > 0
 
 		// update existing issue if needed
-		body := s.RenderGithubIssueBody(report, res, vuln, manualMitigationTasks, policyBasedMitigationTasks, idFooter)
+		body := s.RenderGithubIssueBody(report, res, vuln, "<!-- "+idFooter+" -->")
 		labels := generateVulnerabilityLabels(artifactNameShort, vuln)
 		for _, l := range existingIssue.Labels {
 			labelAlreadyExists := false
@@ -288,17 +284,8 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 			}
 		}
 		state := "open"
-		for _, p := range manualMitigationTasks {
-			if p.Done {
-				state = "closed"
-				break
-			}
-		}
-		for _, p := range policyBasedMitigationTasks {
-			if p.Done {
-				state = "closed"
-				break
-			}
+		if mitigated {
+			state = "closed"
 		}
 		issue := github.IssueRequest{
 			Title:  &title,
@@ -310,46 +297,70 @@ func (s *Scan) ProcessUnfixedIssue(artifactNameShort string, report types.Report
 		if !compareGithubIssues(*existingIssue, issue) {
 			if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
 				s.logger.Info.Printf("Skipped updating issue #%d [limit exceeded]\n", *existingIssue.Number)
-				return existingIssue.Number, nil
+				return &ProcessedUnfixedVulnerability{
+					issueNumber:   existingIssue.Number,
+					mitigations:   mitigations,
+					report:        report,
+					result:        res,
+					vulnerability: vuln,
+				}, nil
 			} else if s.dryRun {
 				s.logger.Info.Printf("Skipped updating issue #%d [dry run]\n", *existingIssue.Number)
-				return existingIssue.Number, nil
+				return &ProcessedUnfixedVulnerability{
+					issueNumber:   existingIssue.Number,
+					mitigations:   mitigations,
+					report:        report,
+					result:        res,
+					vulnerability: vuln,
+				}, nil
 			} else {
 				_, updatedIssueRes, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *existingIssue.Number, &issue)
 				defer updatedIssueRes.Body.Close()
 				if err != nil {
-					return existingIssue.Number, err
+					return nil, err
 				}
 				s.logger.Info.Printf("Updated issue #%d\n", *existingIssue.Number)
 				s.issuesUpdated = s.issuesUpdated + 1
-				return existingIssue.Number, nil
+				return &ProcessedUnfixedVulnerability{
+					issueNumber:   existingIssue.Number,
+					mitigations:   mitigations,
+					report:        report,
+					result:        res,
+					vulnerability: vuln,
+				}, nil
 			}
 		} else {
-			return existingIssue.Number, nil
+			return &ProcessedUnfixedVulnerability{
+				issueNumber:   existingIssue.Number,
+				mitigations:   mitigations,
+				report:        report,
+				result:        res,
+				vulnerability: vuln,
+			}, nil
 		}
 	}
 }
 
-func (s *Scan) ProcessUnfixedIssues(artifactNameShort string, reports []*types.Report) ([]int, error) {
-	issueNumbers := []int{}
+func (s *Scan) ProcessUnfixedVulnerabilities(artifactNameShort string, reports []*types.Report) ([]ProcessedUnfixedVulnerability, error) {
+	processedVulnerabilities := []ProcessedUnfixedVulnerability{}
 	for _, report := range reports {
 		for _, res := range report.Results {
 			for _, vuln := range res.Vulnerabilities {
-				issueNumber, err := s.ProcessUnfixedIssue(artifactNameShort, *report, res, vuln)
+				processVulnerability, err := s.ProcessUnfixedVulnerability(artifactNameShort, *report, res, vuln)
 				if err != nil {
 					return nil, err
 				}
-				if issueNumber != nil {
-					issueNumbers = append(issueNumbers, *issueNumber)
+				if processVulnerability != nil {
+					processedVulnerabilities = append(processedVulnerabilities, *processVulnerability)
 				}
 			}
 		}
 	}
 
-	return issueNumbers, nil
+	return processedVulnerabilities, nil
 }
 
-func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers []int) ([]int, error) {
+func (s *Scan) ProcessFixedVulnerabilities(artifactNameShort string, unfixedIssueNumbers []int) ([]int, error) {
 	issueNumbers := []int{}
 
 	// find all open issue that have not been seen unfixed
@@ -359,7 +370,7 @@ func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers 
 		Labels: openIssuesSearchLabels,
 		State:  openIssuesSearchState,
 		ListOptions: github.ListOptions{
-			PerPage: 100,
+			PerPage: 100, // TODO search all issues
 		},
 	})
 	defer openIssuesRes.Body.Close()
@@ -409,6 +420,93 @@ func (s *Scan) ProcessFixedIssues(artifactNameShort string, unfixedIssueNumbers 
 	return issueNumbers, nil
 }
 
+func (s *Scan) ProcessDashboard(allUnfixedVulnerabilities []ProcessedUnfixedVulnerability) error {
+	footer := "trivy-gh-dashboard=true"
+
+	existingIssueSearchState := "open"
+	existingIssues, existingIssuesRes, err := s.githubClient.Issues.ListByRepo(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &github.IssueListByRepoOptions{
+		State: existingIssueSearchState,
+		ListOptions: github.ListOptions{
+			PerPage: 100, // TODO search all issues
+		},
+	})
+	defer existingIssuesRes.Body.Close()
+	if err != nil {
+		return nil
+	}
+	var existingIssue *github.Issue
+	for _, i := range existingIssues {
+		if strings.Contains(*i.Body, footer) {
+			existingIssue = i
+			break
+		}
+	}
+
+	title := "Security dashboard"
+
+	body := ""
+	body = body + "### Mitigated\n\n"
+	for _, vuln := range allUnfixedVulnerabilities {
+		if len(vuln.mitigations) > 0 {
+			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
+			mitigationTexts := []string{}
+			for _, m := range vuln.mitigations {
+				sanitizedLabel := strings.ReplaceAll(StringSanitize(m.Mitigation.Label), "\n", " ")
+				if m.Policy.Comment == "" {
+					mitigationTexts = append(mitigationTexts, sanitizedLabel)
+				} else {
+					sanitizedComment := strings.ReplaceAll(StringSanitize(m.Policy.Comment), "\n", " ")
+					mitigationTexts = append(mitigationTexts, sanitizedLabel+": "+sanitizedComment)
+				}
+			}
+			body = body + fmt.Sprintf("- [ ] %s **%s** (%.1f) `%s` `%s`: %s\n", vuln.vulnerability.VulnerabilityID, RenderCVSSScoreString(cvssScore), cvssScore, vuln.report.ArtifactName, vuln.vulnerability.PkgName, strings.Join(mitigationTexts, ", "))
+		}
+	}
+	body = body + "### Rate limited\n\n"
+	for _, vuln := range allUnfixedVulnerabilities {
+		if len(vuln.mitigations) == 0 && vuln.issueNumber == nil {
+			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
+			body = body + fmt.Sprintf("- [ ] %s **%s** (%.1f) %s\n", vuln.vulnerability.VulnerabilityID, RenderCVSSScoreString(cvssScore), cvssScore, vuln.report.ArtifactName)
+		}
+	}
+	body = body + "\n<!-- " + footer + " -->"
+
+	state := "open"
+	if existingIssue == nil {
+		if s.dryRun {
+			s.logger.Info.Printf("Skipped creating dashboard issue issue [dry run]\n")
+		} else {
+			createdIssue, createdIssueRes, err := s.githubClient.Issues.Create(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, &github.IssueRequest{
+				Title: &title,
+				Body:  &body,
+				State: &state,
+			})
+			defer createdIssueRes.Body.Close()
+			if err != nil {
+				return err
+			}
+			s.logger.Info.Printf("Created dashboard issue #%d\n", *createdIssue.Number)
+		}
+	} else {
+		if s.dryRun {
+			s.logger.Info.Printf("Skipped updating dashboard issue #%d issue [dry run]\n", *existingIssue.Number)
+		} else {
+			updatedIssue, updatedIssueRes, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *existingIssue.Number, &github.IssueRequest{
+				Title: &title,
+				Body:  &body,
+				State: &state,
+			})
+			defer updatedIssueRes.Body.Close()
+			if err != nil {
+				return err
+			}
+			s.logger.Info.Printf("Updated dashboard issue #%d\n", *updatedIssue.Number)
+		}
+	}
+
+	return nil
+}
+
 func (s *Scan) EvaluateMatchingPolicies(report types.Report, res types.Result, vuln types.DetectedVulnerability) []ConfigPolicy {
 	result := []ConfigPolicy{}
 	for _, p := range s.config.Policies {
@@ -419,8 +517,8 @@ func (s *Scan) EvaluateMatchingPolicies(report types.Report, res types.Result, v
 	return result
 }
 
-func (s *Scan) EvaluatePolicyBasedMitigationTasks(matchingPolicies []ConfigPolicy) []PolicyBasedMitigationTask {
-	result := []PolicyBasedMitigationTask{}
+func (s *Scan) EvaluateMitigations(matchingPolicies []ConfigPolicy) []Mitigation {
+	result := []Mitigation{}
 	for _, p := range matchingPolicies {
 		for _, key := range p.Mitigate {
 			var mitigation *ConfigMitigation
@@ -434,38 +532,16 @@ func (s *Scan) EvaluatePolicyBasedMitigationTasks(matchingPolicies []ConfigPolic
 				s.logger.Info.Printf("Policy references unknown mitigation %s", key)
 				continue
 			}
-			result = append(result, PolicyBasedMitigationTask{
+			result = append(result, Mitigation{
 				Mitigation: *mitigation,
 				Policy:     p,
-				Done:       true,
 			})
 		}
 	}
 	return result
 }
 
-type RenderGithubIssueBodyOpts struct {
-	ManualMitigations      RenderGithubIssueBodyOptsMitigations
-	PolicyBasedMitigations RenderGithubIssueBodyOptsMitigations
-}
-
-type RenderGithubIssueBodyOptsMitigations struct {
-	NotUsed            bool
-	NoPublicNetworking bool
-}
-
-type ManualMitigationTask struct {
-	Mitigation ConfigMitigation
-	Done       bool
-}
-
-type PolicyBasedMitigationTask struct {
-	Mitigation ConfigMitigation
-	Policy     ConfigPolicy
-	Done       bool
-}
-
-func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln types.DetectedVulnerability, manualMitigationTasks []ManualMitigationTask, policyBasedMitigationTasks []PolicyBasedMitigationTask, footer string) string {
+func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln types.DetectedVulnerability, footer string) string {
 	cvssVector, cvssScore, _ := FindVulnerabilityCVSSV3(vuln)
 
 	table := StringSanitize(fmt.Sprintf(`
@@ -480,23 +556,6 @@ func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln
 | Fixed Version | %s
 | Published | %v
 `, vuln.VulnerabilityID, RenderCVSSScoreString(cvssScore), cvssScore, cvssVector, report.ArtifactName, vuln.PkgName, vuln.InstalledVersion, vuln.FixedVersion, vuln.PublishedDate))
-
-	manualMitigations := "### Manual mitigations\n\n"
-	for _, m := range manualMitigationTasks {
-		manualMitigations = manualMitigations + renderGithubIssueTask(m.Done, fmt.Sprintf("<!-- manual-mitigation=%s --> %s", m.Mitigation.Key, m.Mitigation.Label)) + "\n"
-	}
-	manualMitigations = StringSanitize(manualMitigations)
-
-	policyBasedMitigations := "### Policy-based mitigations\n\n"
-	for _, m := range policyBasedMitigationTasks {
-		policyBasedMitigations = policyBasedMitigations + renderGithubIssueTask(m.Done, fmt.Sprintf("<!-- policy-based-mitigation=%s --> %s", m.Mitigation.Key, m.Mitigation.Label))
-		sanitizedComment := strings.ReplaceAll(StringSanitize(m.Policy.Comment), "\n", " ")
-		if sanitizedComment != "" {
-			policyBasedMitigations = policyBasedMitigations + ": " + sanitizedComment
-		}
-		policyBasedMitigations = policyBasedMitigations + "\n"
-	}
-	policyBasedMitigations = StringSanitize(policyBasedMitigations)
 
 	description := StringSanitize(fmt.Sprintf(`
 ### Description
@@ -529,7 +588,7 @@ func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln
 	// 	cvssDetails = fmt.Sprintf("<details>\n<summary>%s</summary>\n\n%s</details>", cvssVector, strings.Join(lines, "\n\n"))
 	// }
 
-	return strings.Join([]string{table, manualMitigations, policyBasedMitigations, description, references, footer}, "\n\n")
+	return strings.Join([]string{table, description, references, footer}, "\n\n")
 }
 
 func (s *Scan) ScrapeFile(file string) ([]string, error) {

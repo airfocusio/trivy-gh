@@ -17,9 +17,8 @@ type Config struct {
 }
 
 type ConfigMitigation struct {
-	Key         string `yaml:"key"`
-	Label       string `yaml:"label"`
-	AllowManual bool   `yaml:"allowManual"`
+	Key   string `yaml:"key"`
+	Label string `yaml:"label"`
 }
 
 type ConfigPolicy struct {

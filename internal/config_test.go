@@ -28,14 +28,12 @@ func TestLoadConfig(t *testing.T) {
 			},
 			Mitigations: []ConfigMitigation{
 				{
-					Key:         "not-used",
-					Label:       "Not used",
-					AllowManual: true,
+					Key:   "not-used",
+					Label: "Not used",
 				},
 				{
-					Key:         "no-public-networking",
-					Label:       "No public networking",
-					AllowManual: true,
+					Key:   "no-public-networking",
+					Label: "No public networking",
 				},
 			},
 			Policies: []ConfigPolicy{
@@ -54,9 +52,6 @@ func TestLoadConfig(t *testing.T) {
 					Comment: "This container is purely internal.\nSo we can ignore it.\n",
 					Match: &AndPolicyMatcher{
 						Inner: []PolicyMatcher{
-							&ArtifactNameShortPolicyMatcher{
-								ArtifactNameShort: []string{"debian"},
-							},
 							&CVSSPolicyMatcher{
 								CVSS: CVSSPolicyMatcherCVSS{
 									AV: []string{"N"},
@@ -65,18 +60,6 @@ func TestLoadConfig(t *testing.T) {
 						},
 					},
 					Mitigate: []string{"no-public-networking"},
-				},
-				{
-					Match: &AndPolicyMatcher{
-						Inner: []PolicyMatcher{
-							&CVSSPolicyMatcher{
-								CVSS: CVSSPolicyMatcherCVSS{
-									ScoreLowerThan: 9.5,
-								},
-							},
-						},
-					},
-					Ignore: true,
 				},
 				{
 					Match: &AndPolicyMatcher{
