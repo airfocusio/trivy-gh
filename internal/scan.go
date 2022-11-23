@@ -443,35 +443,9 @@ func (s *Scan) ProcessDashboard(allUnfixedVulnerabilities []ProcessedUnfixedVuln
 	}
 
 	title := "Security dashboard"
-
-	body := ""
-	body = body + "### Mitigated\n\n"
-	for _, vuln := range allUnfixedVulnerabilities {
-		if len(vuln.mitigations) > 0 {
-			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
-			mitigationTexts := []string{}
-			for _, m := range vuln.mitigations {
-				sanitizedLabel := strings.ReplaceAll(StringSanitize(m.Mitigation.Label), "\n", " ")
-				if m.Policy.Comment == "" {
-					mitigationTexts = append(mitigationTexts, sanitizedLabel)
-				} else {
-					sanitizedComment := strings.ReplaceAll(StringSanitize(m.Policy.Comment), "\n", " ")
-					mitigationTexts = append(mitigationTexts, sanitizedLabel+": "+sanitizedComment)
-				}
-			}
-			body = body + fmt.Sprintf("- [ ] %s **%s** (%.1f) `%s` `%s`: %s\n", vuln.vulnerability.VulnerabilityID, RenderCVSSScoreString(cvssScore), cvssScore, vuln.report.ArtifactName, vuln.vulnerability.PkgName, strings.Join(mitigationTexts, ", "))
-		}
-	}
-	body = body + "### Rate limited\n\n"
-	for _, vuln := range allUnfixedVulnerabilities {
-		if len(vuln.mitigations) == 0 && vuln.issueNumber == nil {
-			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
-			body = body + fmt.Sprintf("- [ ] %s **%s** (%.1f) %s\n", vuln.vulnerability.VulnerabilityID, RenderCVSSScoreString(cvssScore), cvssScore, vuln.report.ArtifactName)
-		}
-	}
-	body = body + "\n<!-- " + footer + " -->"
-
+	body := s.RenderGithubDashboardIssueBody(allUnfixedVulnerabilities, "<!-- "+footer+" -->")
 	state := "open"
+
 	if existingIssue == nil {
 		if s.dryRun {
 			s.logger.Info.Printf("Skipped creating dashboard issue issue [dry run]\n")
@@ -589,6 +563,38 @@ func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln
 	// }
 
 	return strings.Join([]string{table, description, references, footer}, "\n\n")
+}
+
+func (s *Scan) RenderGithubDashboardIssueBody(allUnfixedVulnerabilities []ProcessedUnfixedVulnerability, footer string) string {
+	migrated := "### Mitigated\n\n"
+	for _, vuln := range allUnfixedVulnerabilities {
+		if len(vuln.mitigations) > 0 {
+			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
+			mitigationTexts := []string{}
+			for _, m := range vuln.mitigations {
+				sanitizedLabel := strings.ReplaceAll(StringSanitize(m.Mitigation.Label), "\n", " ")
+				if m.Policy.Comment == "" {
+					mitigationTexts = append(mitigationTexts, sanitizedLabel)
+				} else {
+					sanitizedComment := strings.ReplaceAll(StringSanitize(m.Policy.Comment), "\n", " ")
+					mitigationTexts = append(mitigationTexts, sanitizedLabel+": "+sanitizedComment)
+				}
+			}
+			migrated = migrated + fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s` `%s`: %s\n", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.report.ArtifactName, vuln.vulnerability.PkgName, strings.Join(mitigationTexts, ", "))
+		}
+	}
+	migrated = StringSanitize(migrated)
+
+	rateLimited := "### Rate limited\n\n"
+	for _, vuln := range allUnfixedVulnerabilities {
+		if len(vuln.mitigations) == 0 && vuln.issueNumber == nil {
+			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
+			rateLimited = rateLimited + fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s`\n", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.report.ArtifactName)
+		}
+	}
+	rateLimited = StringSanitize(rateLimited)
+
+	return strings.Join([]string{migrated, rateLimited, footer}, "\n\n")
 }
 
 func (s *Scan) ScrapeFile(file string) ([]string, error) {

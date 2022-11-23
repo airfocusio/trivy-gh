@@ -7,7 +7,6 @@ import (
 	"os"
 	"path"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -52,50 +51,110 @@ func TestFindMatchingPolicies(t *testing.T) {
 func TestRenderGithubIssueBody(t *testing.T) {
 	resetGithubToken := temporarySetenv("GITHUB_TOKEN", "token")
 	defer resetGithubToken()
-
 	scan := NewScan(NewNullLogger(), Config{}, "../example", true, 0, 0)
 
-	assert.Equal(t, strings.Trim(`
-| Key | Value
-|---|---
-| ID | CVE-2011-3374
-| CVSS Score | low (3.7)
-| CVSS Vector | CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N
-| Artifact | debian:11
-| Package | apt
-| Installed Version | 2.2.4
-| Fixed Version |
-| Published | <nil>
-
-### Description
-
-### References
-
-https://domain.com/main
-https://domain.com/path1
-https://domain.com/path2
-
-<!-- id=abc123 -->
-`, "\n "), scan.RenderGithubIssueBody(types.Report{
-		ArtifactName: "debian:11",
-	}, types.Result{}, types.DetectedVulnerability{
-		VulnerabilityID:  "CVE-2011-3374",
-		PkgName:          "apt",
-		InstalledVersion: "2.2.4",
-		PrimaryURL:       "https://domain.com/main",
-		Vulnerability: trivydbtypes.Vulnerability{
-			CVSS: trivydbtypes.VendorCVSS{
-				"nvd": trivydbtypes.CVSS{
-					V3Vector: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N",
-					V3Score:  3.7,
+	assert.Equal(t, "| Key | Value\n"+
+		"|---|---\n"+
+		"| ID | CVE-2011-3374\n"+
+		"| CVSS Score | low (3.7)\n"+
+		"| CVSS Vector | CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N\n"+
+		"| Artifact | debian:11\n"+
+		"| Package | apt\n"+
+		"| Installed Version | 2.2.4\n"+
+		"| Fixed Version |\n"+
+		"| Published | <nil>\n"+
+		"\n"+
+		"### Description\n"+
+		"\n"+
+		"### References\n"+
+		"\n"+
+		"https://domain.com/main\n"+
+		"https://domain.com/path1\n"+
+		"https://domain.com/path2\n"+
+		"\n"+
+		"<!-- id=abc123 -->",
+		scan.RenderGithubIssueBody(types.Report{
+			ArtifactName: "debian:11",
+		}, types.Result{}, types.DetectedVulnerability{
+			VulnerabilityID:  "CVE-2011-3374",
+			PkgName:          "apt",
+			InstalledVersion: "2.2.4",
+			PrimaryURL:       "https://domain.com/main",
+			Vulnerability: trivydbtypes.Vulnerability{
+				CVSS: trivydbtypes.VendorCVSS{
+					"nvd": trivydbtypes.CVSS{
+						V3Vector: "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N",
+						V3Score:  3.7,
+					},
+				},
+				References: []string{
+					"https://domain.com/path1",
+					"https://domain.com/path2",
 				},
 			},
-			References: []string{
-				"https://domain.com/path1",
-				"https://domain.com/path2",
+		}, "<!-- id=abc123 -->"))
+}
+
+func TestRenderGithubDashboardIssueBody(t *testing.T) {
+	resetGithubToken := temporarySetenv("GITHUB_TOKEN", "token")
+	defer resetGithubToken()
+	scan := NewScan(NewNullLogger(), Config{}, "../example", true, 0, 0)
+	issueNumber := 1
+
+	assert.Equal(t, "### Mitigated\n"+
+		"\n"+
+		"- [ ] [CVE-0](https://domain.com/cve-0) **critical** (10.0) `mitigated:1.2.3` ``: Mitigation: Policy\n"+
+		"\n"+
+		"### Rate limited\n"+
+		"\n"+
+		"- [ ] [CVE-1](https://domain.com/cve-1) **low** (0.1) `rate-limited:1.2.3`\n"+
+		"- [ ] []() **unknown** (0.0) ``\n"+
+		"\n"+
+		"<!-- id=abc123 -->",
+		scan.RenderGithubDashboardIssueBody([]ProcessedUnfixedVulnerability{
+			{
+				issueNumber: &issueNumber,
+				report: types.Report{
+					ArtifactName: "mitigated:1.2.3",
+				},
+				vulnerability: types.DetectedVulnerability{
+					VulnerabilityID: "CVE-0",
+					PrimaryURL:      "https://domain.com/cve-0",
+					Vulnerability: trivydbtypes.Vulnerability{
+						CVSS: trivydbtypes.VendorCVSS{
+							"nvd": trivydbtypes.CVSS{
+								V3Score: 10,
+							},
+						},
+					},
+				},
+				mitigations: []Mitigation{{
+					Mitigation: ConfigMitigation{
+						Label: "Mitigation",
+					},
+					Policy: ConfigPolicy{
+						Comment: "Policy",
+					},
+				}},
 			},
-		},
-	}, "<!-- id=abc123 -->"))
+			{
+				report: types.Report{
+					ArtifactName: "rate-limited:1.2.3",
+				},
+				vulnerability: types.DetectedVulnerability{
+					VulnerabilityID: "CVE-1",
+					PrimaryURL:      "https://domain.com/cve-1",
+					Vulnerability: trivydbtypes.Vulnerability{
+						CVSS: trivydbtypes.VendorCVSS{
+							"nvd": trivydbtypes.CVSS{
+								V3Score: 0.1,
+							},
+						},
+					},
+				},
+			},
+			{},
+		}, "<!-- id=abc123 -->"))
 }
 
 func TestScan(t *testing.T) {
