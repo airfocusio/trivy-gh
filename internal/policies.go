@@ -80,8 +80,11 @@ func PolicyMatcherUnmarshalYAML(value *yaml.Node) (PolicyMatcher, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	return nil, fmt.Errorf("unable to unmarshall matcher `%s`", strings.ReplaceAll(string(str), "\n", "\\n"))
+	message := "no valid matcher definition found"
+	if len(nonEmpty) > 1 {
+		message = "multiple valid matcher definitions found"
+	}
+	return nil, fmt.Errorf("unable to unmarshall matcher `%s`: %s", strings.ReplaceAll(string(str), "\n", "\\n"), message)
 }
 
 var _ PolicyMatcher = (*NotPolicyMatcher)(nil)
