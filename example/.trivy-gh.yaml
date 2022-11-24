@@ -8,22 +8,22 @@ mitigations:
 - key: no-public-networking
   label: No public networking
 policies:
-- matchers:
-  - id:
+- match:
+    id:
     - CVE-0
   ignore: true
 - comment: |
     Can only be executed from inside the container.
-  matchers:
-  - packageName:
+  match:
+    packageName:
     - sh
     - bash
   mitigate: not-used
 - comment: |
     This container is purely internal.
     So we can ignore it.
-  matchers:
-  - cvss:
+  match:
+    cvss:
       av:
       - N
   mitigate: no-public-networking

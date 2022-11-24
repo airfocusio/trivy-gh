@@ -256,7 +256,9 @@ func TestScan(t *testing.T) {
 		scan.githubClient.Issues.Edit(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber, &github.IssueRequest{
 			State: &closed,
 		})
-		for _, l := range generateVulnerabilityLabels(artifactNameShort, report1.Results[0].Vulnerabilities[0]) {
+		labels := generateVulnerabilityLabels(artifactNameShort, report1.Results[0].Vulnerabilities[0])
+		labels = labels[0 : len(labels)-1]
+		for _, l := range labels {
 			scan.githubClient.Issues.DeleteLabel(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, l)
 		}
 	}()

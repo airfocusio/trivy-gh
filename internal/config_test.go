@@ -40,104 +40,72 @@ func TestLoadConfig(t *testing.T) {
 			Policies: []ConfigPolicy{
 				{
 					Comment: "Comment 1\n",
-					Match: &AndPolicyMatcher{
-						And: []PolicyMatcher{
-							&IDPolicyMatcher{
-								ID: []string{"CVE-0"},
-							},
-						},
+					Match: &IDPolicyMatcher{
+						ID: []string{"CVE-0"},
 					},
 					Ignore: true,
 				},
 				{
 					Comment: "Comment 2",
-					Match: &AndPolicyMatcher{
-						And: []PolicyMatcher{
-							&ArtifactNameShortPolicyMatcher{
-								ArtifactNameShort: []string{"debian"},
-							},
-						},
+					Match: &ArtifactNameShortPolicyMatcher{
+						ArtifactNameShort: []string{"debian"},
 					},
 					Mitigate: []string{"not-used"},
 				},
 				{
-					Match: &AndPolicyMatcher{
-						And: []PolicyMatcher{
-							&PackageNamePolicyMatcher{
-								PackageName: []string{"sh", "bash"},
-							},
-						},
+					Match: &PackageNamePolicyMatcher{
+						PackageName: []string{"sh", "bash"},
 					},
 					Mitigate: []string{"not-used"},
 				},
 				{
-					Match: &AndPolicyMatcher{
-						And: []PolicyMatcher{
-							&ClassPolicyMatcher{
-								Class: []string{"os-pkgs"},
-							},
-						},
+					Match: &ClassPolicyMatcher{
+						Class: []string{"os-pkgs"},
 					},
 					Mitigate: []string{"not-used"},
 				},
 				{
-					Match: &AndPolicyMatcher{
-						And: []PolicyMatcher{
-							&CVSSPolicyMatcher{
-								CVSS: CVSSPolicyMatcherCVSS{
-									AV: []string{"N", "L"},
-									AC: []string{"H"},
-									PR: []string{"H"},
-									UI: []string{"N"},
-									S:  []string{"C"},
-									C:  []string{"H"},
-									I:  []string{"H"},
-									A:  []string{"H"},
-								},
-							},
+					Match: &CVSSPolicyMatcher{
+						CVSS: CVSSPolicyMatcherCVSS{
+							AV: []string{"N", "L"},
+							AC: []string{"H"},
+							PR: []string{"H"},
+							UI: []string{"N"},
+							S:  []string{"C"},
+							C:  []string{"H"},
+							I:  []string{"H"},
+							A:  []string{"H"},
 						},
 					},
 					Mitigate: []string{"no-public-networking"},
 				},
 				{
-					Match: &AndPolicyMatcher{
-						And: []PolicyMatcher{
-							&NotPolicyMatcher{
-								Not: &IDPolicyMatcher{
-									ID: []string{"CVE-1"},
-								},
-							},
+					Match: &NotPolicyMatcher{
+						Not: &IDPolicyMatcher{
+							ID: []string{"CVE-1"},
 						},
 					},
 				},
 				{
 					Match: &AndPolicyMatcher{
 						And: []PolicyMatcher{
-							&AndPolicyMatcher{
-								And: []PolicyMatcher{
-									&IDPolicyMatcher{
-										ID: []string{"CVE-2"},
-									},
-									&IDPolicyMatcher{
-										ID: []string{"CVE-3"},
-									},
-								},
+							&IDPolicyMatcher{
+								ID: []string{"CVE-2"},
+							},
+							&IDPolicyMatcher{
+								ID: []string{"CVE-3"},
 							},
 						},
 					},
 				},
 				{
-					Match: &AndPolicyMatcher{
-						And: []PolicyMatcher{
-							&OrPolicyMatcher{
-								Or: []PolicyMatcher{
-									&IDPolicyMatcher{
-										ID: []string{"CVE-4"},
-									},
-									&IDPolicyMatcher{
-										ID: []string{"CVE-5"},
-									},
-								},
+					Match: &OrPolicyMatcher{
+						Or: []PolicyMatcher{
+							&IDPolicyMatcher{
+								ID: []string{"CVE-4"},
+							},
+							&IDPolicyMatcher{
+								ID: []string{"CVE-5"},
 							},
 						},
 					},

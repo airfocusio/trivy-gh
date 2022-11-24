@@ -12,24 +12,24 @@ mitigations:
 policies:
 - comment: |
     Comment 1
-  matchers:
-  - id:
+  match:
+    id:
     - CVE-0
   ignore: true
 - comment: Comment 2
-  matchers:
-  - artifactNameShort: debian
+  match:
+    artifactNameShort: debian
   mitigate: not-used
-- matchers:
-  - packageName:
+- match:
+    packageName:
     - sh
     - bash
   mitigate: not-used
-- matchers:
-  - class: os-pkgs
+- match:
+     class: os-pkgs
   mitigate: not-used
-- matchers:
-  - cvss:
+- match:
+    cvss:
       av:
       - N
       - L
@@ -41,14 +41,14 @@ policies:
       i: H
       a: H
   mitigate: no-public-networking
-- matchers:
-  - not:
+- match:
+    not:
       id: CVE-1
-- matchers:
-  - and:
+- match:
+    and:
     - id: CVE-2
     - id: CVE-3
-- matchers:
-  - or:
+- match:
+    or:
     - id: CVE-4
     - id: CVE-5
