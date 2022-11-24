@@ -101,14 +101,21 @@ func TestRenderGithubDashboardIssueBody(t *testing.T) {
 	scan := NewScan(NewNullLogger(), Config{}, "../example", true, 0, 0)
 	issueNumber := 1
 
-	assert.Equal(t, "### Mitigated\n"+
+	assert.Equal(t, "<!-- id=abc123 -->",
+		scan.RenderGithubDashboardIssueBody([]ProcessedUnfixedVulnerability{}, "<!-- id=abc123 -->"))
+
+	assert.Equal(t, "### Rate limited\n"+
 		"\n"+
-		"- [ ] [CVE-0](https://domain.com/cve-0) **critical** (10.0) `mitigated:1.2.3` ``: Mitigation: Policy\n"+
-		"\n"+
-		"### Rate limited\n"+
+		"The following issues have not been created yet, as the rate limit for issue creation has been exceeded. They will be created later.\n"+
 		"\n"+
 		"- [ ] [CVE-1](https://domain.com/cve-1) **low** (0.1) `rate-limited:1.2.3`\n"+
 		"- [ ] []() **unknown** (0.0) ``\n"+
+		"\n"+
+		"### Mitigated\n"+
+		"\n"+
+		"The following issues are still found, but have been marked as mitigated by some policy. They will stay here in this list until finally fixed.\n"+
+		"\n"+
+		"- [ ] [CVE-0](https://domain.com/cve-0) **critical** (10.0) `mitigated:1.2.3` ``: Mitigation: Policy\n"+
 		"\n"+
 		"<!-- id=abc123 -->",
 		scan.RenderGithubDashboardIssueBody([]ProcessedUnfixedVulnerability{

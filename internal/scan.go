@@ -552,7 +552,24 @@ func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln
 }
 
 func (s *Scan) RenderGithubDashboardIssueBody(allUnfixedVulnerabilities []ProcessedUnfixedVulnerability, footer string) string {
-	migrated := "### Mitigated\n\n"
+	rateLimited := ""
+	rateLimitedTasks := []string{}
+	for _, vuln := range allUnfixedVulnerabilities {
+		if len(vuln.mitigations) == 0 && vuln.issueNumber == nil {
+			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
+			rateLimitedTasks = append(rateLimitedTasks, fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s`", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.report.ArtifactName))
+		}
+	}
+	if len(rateLimitedTasks) > 0 {
+		rateLimited = strings.Join([]string{
+			"### Rate limited",
+			"The following issues have not been created yet, as the rate limit for issue creation has been exceeded. They will be created later.",
+			strings.Join(rateLimitedTasks, "\n"),
+		}, "\n\n")
+	}
+
+	mitigated := ""
+	mitigatedTasks := []string{}
 	for _, vuln := range allUnfixedVulnerabilities {
 		if len(vuln.mitigations) > 0 {
 			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
@@ -566,21 +583,18 @@ func (s *Scan) RenderGithubDashboardIssueBody(allUnfixedVulnerabilities []Proces
 					mitigationTexts = append(mitigationTexts, sanitizedLabel+": "+sanitizedComment)
 				}
 			}
-			migrated = migrated + fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s` `%s`: %s\n", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.report.ArtifactName, vuln.vulnerability.PkgName, strings.Join(mitigationTexts, ", "))
+			mitigatedTasks = append(mitigatedTasks, fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s` `%s`: %s", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.report.ArtifactName, vuln.vulnerability.PkgName, strings.Join(mitigationTexts, ", ")))
 		}
 	}
-	migrated = StringSanitize(migrated)
-
-	rateLimited := "### Rate limited\n\n"
-	for _, vuln := range allUnfixedVulnerabilities {
-		if len(vuln.mitigations) == 0 && vuln.issueNumber == nil {
-			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
-			rateLimited = rateLimited + fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s`\n", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.report.ArtifactName)
-		}
+	if len(mitigatedTasks) > 0 {
+		mitigated = strings.Join([]string{
+			"### Mitigated",
+			"The following issues are still found, but have been marked as mitigated by some policy. They will stay here in this list until finally fixed.",
+			strings.Join(mitigatedTasks, "\n"),
+		}, "\n\n")
 	}
-	rateLimited = StringSanitize(rateLimited)
 
-	return strings.Join([]string{migrated, rateLimited, footer}, "\n\n")
+	return strings.Join(StringsNonEmpty([]string{rateLimited, mitigated, footer}), "\n\n")
 }
 
 func (s *Scan) ScrapeFile(file string) ([]string, error) {
