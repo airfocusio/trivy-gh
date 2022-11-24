@@ -12,7 +12,7 @@ func TestLoadConfig(t *testing.T) {
 	resetGithubToken := temporarySetenv("GITHUB_TOKEN", "token")
 	defer resetGithubToken()
 
-	bytes, err := os.ReadFile("../example/.trivy-gh.yaml")
+	bytes, err := os.ReadFile("./config_test.yaml")
 	assert.NoError(t, err)
 
 	c1, err := LoadConfig(bytes)
@@ -20,11 +20,12 @@ func TestLoadConfig(t *testing.T) {
 		c2 := &Config{
 			Github: ConfigGithub{
 				Token:          "token",
-				IssueRepoOwner: "airfocusio",
-				IssueRepoName:  "trivy-gh-test",
+				IssueRepoOwner: "owner",
+				IssueRepoName:  "repo",
 			},
 			Files: []regexp.Regexp{
-				*regexp.MustCompile(`^/deployment\.yaml$`),
+				*regexp.MustCompile(`f1$`),
+				*regexp.MustCompile(`^f2`),
 			},
 			Mitigations: []ConfigMitigation{
 				{
@@ -38,6 +39,7 @@ func TestLoadConfig(t *testing.T) {
 			},
 			Policies: []ConfigPolicy{
 				{
+					Comment: "Comment 1\n",
 					Match: &AndPolicyMatcher{
 						Inner: []PolicyMatcher{
 							&IDPolicyMatcher{
@@ -48,7 +50,17 @@ func TestLoadConfig(t *testing.T) {
 					Ignore: true,
 				},
 				{
-					Comment: "Can only be executed from inside the container.\n",
+					Comment: "Comment 2",
+					Match: &AndPolicyMatcher{
+						Inner: []PolicyMatcher{
+							&ArtifactNameShortPolicyMatcher{
+								ArtifactNameShort: []string{"debian"},
+							},
+						},
+					},
+					Mitigate: []string{"not-used"},
+				},
+				{
 					Match: &AndPolicyMatcher{
 						Inner: []PolicyMatcher{
 							&PackageNamePolicyMatcher{
@@ -59,12 +71,28 @@ func TestLoadConfig(t *testing.T) {
 					Mitigate: []string{"not-used"},
 				},
 				{
-					Comment: "This container is purely internal.\nSo we can ignore it.\n",
+					Match: &AndPolicyMatcher{
+						Inner: []PolicyMatcher{
+							&ClassPolicyMatcher{
+								Class: []string{"os-pkgs"},
+							},
+						},
+					},
+					Mitigate: []string{"not-used"},
+				},
+				{
 					Match: &AndPolicyMatcher{
 						Inner: []PolicyMatcher{
 							&CVSSPolicyMatcher{
 								CVSS: CVSSPolicyMatcherCVSS{
-									AV: []string{"N"},
+									AV: []string{"N", "L"},
+									AC: []string{"H"},
+									PR: []string{"H"},
+									UI: []string{"N"},
+									S:  []string{"C"},
+									C:  []string{"H"},
+									I:  []string{"H"},
+									A:  []string{"H"},
 								},
 							},
 						},

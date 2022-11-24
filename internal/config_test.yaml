@@ -1,0 +1,43 @@
+github:
+  token: ${GITHUB_TOKEN}
+  issueRepo: owner/repo
+files:
+- f1$
+- ^f2
+mitigations:
+- key: not-used
+  label: Package not used
+- key: no-public-networking
+  label: No public networking
+policies:
+- comment: |
+    Comment 1
+  matchers:
+  - id:
+    - CVE-0
+  ignore: true
+- comment: Comment 2
+  matchers:
+  - artifactNameShort: debian
+  mitigate: not-used
+- matchers:
+  - packageName:
+    - sh
+    - bash
+  mitigate: not-used
+- matchers:
+  - class: os-pkgs
+  mitigate: not-used
+- matchers:
+  - cvss:
+      av:
+      - N
+      - L
+      ac: H
+      pr: H
+      ui: N
+      s: C
+      c: H
+      i: H
+      a: H
+  mitigate: no-public-networking
