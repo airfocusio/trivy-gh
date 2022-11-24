@@ -20,6 +20,10 @@ func (p *YesPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln t
 	return true
 }
 
+func (p *YesPolicyMatcher) String() string {
+	return "yes"
+}
+
 var _ PolicyMatcher = (*NoPolicyMatcher)(nil)
 
 type NoPolicyMatcher struct{}
@@ -30,6 +34,39 @@ func (p *NoPolicyMatcher) IsNonEmpty() bool {
 
 func (p *NoPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
 	return false
+}
+
+func (p *NoPolicyMatcher) String() string {
+	return "no"
+}
+
+func TestPolicyMatcherString(t *testing.T) {
+	p := AndPolicyMatcher{
+		And: []PolicyMatcher{
+			&NotPolicyMatcher{
+				Not: &IDPolicyMatcher{
+					ID: []string{"CVE-0"},
+				},
+			},
+			&PackageNamePolicyMatcher{
+				PackageName: []string{"dpkg", "apit"},
+			},
+			&CVSSPolicyMatcher{
+				CVSS: CVSSPolicyMatcherCVSS{
+					ScoreLowerThan: 5,
+					AV:             []string{"N", "A"},
+					AC:             []string{"H"},
+					PR:             []string{"H"},
+					UI:             []string{"H"},
+					S:              []string{"H"},
+					C:              []string{"H"},
+					I:              []string{"H"},
+					A:              []string{"H"},
+				},
+			},
+		},
+	}
+	assert.Equal(t, "and(not(id(CVE-0)),packageName(dpkg,apit),cvss(score(<=5.0),av(N,A),ac(H),pr(H),ui(H),s(H),c(H),i(H),a(H)))", p.String())
 }
 
 func TestAndPolicyMatcher(t *testing.T) {

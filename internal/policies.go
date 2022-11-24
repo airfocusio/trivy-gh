@@ -11,6 +11,7 @@ import (
 type PolicyMatcher interface {
 	IsNonEmpty() bool
 	IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool
+	String() string
 }
 
 func PolicyMatcherUnmarshalYAML(value *yaml.Node) (PolicyMatcher, error) {
@@ -98,10 +99,17 @@ func (p *NotPolicyMatcher) IsNonEmpty() bool {
 }
 
 func (p *NotPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
-	return !p.Not.IsMatch(report, res, vuln)
+	return p.Not == nil || !p.Not.IsMatch(report, res, vuln)
 }
 
-func (c *NotPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
+func (p *NotPolicyMatcher) String() string {
+	if p.Not == nil {
+		return "not(<nil>)"
+	}
+	return fmt.Sprintf("not(%s)", p.Not.String())
+}
+
+func (p *NotPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
 	var raw map[string](yaml.Node)
 	err := value.Decode(&raw)
 	if err != nil {
@@ -115,7 +123,7 @@ func (c *NotPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
 	if err != nil {
 		return err
 	}
-	c.Not = not
+	p.Not = not
 	return nil
 }
 
@@ -138,7 +146,15 @@ func (p *AndPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln t
 	return true
 }
 
-func (c *AndPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
+func (p *AndPolicyMatcher) String() string {
+	inners := []string{}
+	for _, inner := range p.And {
+		inners = append(inners, inner.String())
+	}
+	return fmt.Sprintf("and(%s)", strings.Join(inners, ","))
+}
+
+func (p *AndPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
 	var raw map[string]([]yaml.Node)
 	err := value.Decode(&raw)
 	if err != nil {
@@ -153,7 +169,7 @@ func (c *AndPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
 		if err != nil {
 			return err
 		}
-		c.And = append(c.And, and)
+		p.And = append(p.And, and)
 	}
 	return nil
 }
@@ -177,7 +193,15 @@ func (p *OrPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln ty
 	return false
 }
 
-func (c *OrPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
+func (p *OrPolicyMatcher) String() string {
+	inners := []string{}
+	for _, inner := range p.Or {
+		inners = append(inners, inner.String())
+	}
+	return fmt.Sprintf("or(%s)", strings.Join(inners, ","))
+}
+
+func (p *OrPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
 	var raw map[string]([]yaml.Node)
 	err := value.Decode(&raw)
 	if err != nil {
@@ -192,7 +216,7 @@ func (c *OrPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
 		if err != nil {
 			return err
 		}
-		c.Or = append(c.Or, or)
+		p.Or = append(p.Or, or)
 	}
 	return nil
 }
@@ -216,6 +240,14 @@ func (p *IDPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln ty
 	return false
 }
 
+func (p *IDPolicyMatcher) String() string {
+	inners := []string{}
+	for _, inner := range p.ID {
+		inners = append(inners, inner)
+	}
+	return fmt.Sprintf("id(%s)", strings.Join(inners, ","))
+}
+
 var _ PolicyMatcher = (*ArtifactNameShortPolicyMatcher)(nil)
 
 type ArtifactNameShortPolicyMatcher struct {
@@ -233,6 +265,14 @@ func (p *ArtifactNameShortPolicyMatcher) IsMatch(report types.Report, res types.
 		}
 	}
 	return false
+}
+
+func (p *ArtifactNameShortPolicyMatcher) String() string {
+	inners := []string{}
+	for _, inner := range p.ArtifactNameShort {
+		inners = append(inners, inner)
+	}
+	return fmt.Sprintf("artifactNameShort(%s)", strings.Join(inners, ","))
 }
 
 var _ PolicyMatcher = (*PackageNamePolicyMatcher)(nil)
@@ -254,6 +294,14 @@ func (p *PackageNamePolicyMatcher) IsMatch(report types.Report, res types.Result
 	return false
 }
 
+func (p *PackageNamePolicyMatcher) String() string {
+	inners := []string{}
+	for _, inner := range p.PackageName {
+		inners = append(inners, inner)
+	}
+	return fmt.Sprintf("packageName(%s)", strings.Join(inners, ","))
+}
+
 var _ PolicyMatcher = (*ClassPolicyMatcher)(nil)
 
 type ClassPolicyMatcher struct {
@@ -273,6 +321,14 @@ func (p *ClassPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln
 	return false
 }
 
+func (p *ClassPolicyMatcher) String() string {
+	inners := []string{}
+	for _, inner := range p.Class {
+		inners = append(inners, inner)
+	}
+	return fmt.Sprintf("class(%s)", strings.Join(inners, ","))
+}
+
 type CVSSPolicyMatcher struct {
 	CVSS CVSSPolicyMatcherCVSS `yaml:"cvss"`
 }
@@ -289,16 +345,16 @@ type CVSSPolicyMatcherCVSS struct {
 	A              StringArray `yaml:"a"`
 }
 
-func (c *CVSSPolicyMatcher) IsNonEmpty() bool {
-	return c.CVSS.ScoreLowerThan > 0 ||
-		len(c.CVSS.AV) > 0 ||
-		len(c.CVSS.AC) > 0 ||
-		len(c.CVSS.PR) > 0 ||
-		len(c.CVSS.UI) > 0 ||
-		len(c.CVSS.S) > 0 ||
-		len(c.CVSS.C) > 0 ||
-		len(c.CVSS.I) > 0 ||
-		len(c.CVSS.A) > 0
+func (p *CVSSPolicyMatcher) IsNonEmpty() bool {
+	return p.CVSS.ScoreLowerThan > 0 ||
+		len(p.CVSS.AV) > 0 ||
+		len(p.CVSS.AC) > 0 ||
+		len(p.CVSS.PR) > 0 ||
+		len(p.CVSS.UI) > 0 ||
+		len(p.CVSS.S) > 0 ||
+		len(p.CVSS.C) > 0 ||
+		len(p.CVSS.I) > 0 ||
+		len(p.CVSS.A) > 0
 }
 
 func (p *CVSSPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
@@ -333,4 +389,36 @@ func (p *CVSSPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln 
 	}
 
 	return true
+}
+
+func (p *CVSSPolicyMatcher) String() string {
+	inners := []string{}
+	if p.CVSS.ScoreLowerThan > 0 {
+		inners = append(inners, fmt.Sprintf("score(<=%.1f)", p.CVSS.ScoreLowerThan))
+	}
+	if len(p.CVSS.AV) > 0 {
+		inners = append(inners, fmt.Sprintf("av(%s)", strings.Join(p.CVSS.AV, ",")))
+	}
+	if len(p.CVSS.AC) > 0 {
+		inners = append(inners, fmt.Sprintf("ac(%s)", strings.Join(p.CVSS.AC, ",")))
+	}
+	if len(p.CVSS.PR) > 0 {
+		inners = append(inners, fmt.Sprintf("pr(%s)", strings.Join(p.CVSS.PR, ",")))
+	}
+	if len(p.CVSS.UI) > 0 {
+		inners = append(inners, fmt.Sprintf("ui(%s)", strings.Join(p.CVSS.UI, ",")))
+	}
+	if len(p.CVSS.S) > 0 {
+		inners = append(inners, fmt.Sprintf("s(%s)", strings.Join(p.CVSS.S, ",")))
+	}
+	if len(p.CVSS.C) > 0 {
+		inners = append(inners, fmt.Sprintf("c(%s)", strings.Join(p.CVSS.C, ",")))
+	}
+	if len(p.CVSS.I) > 0 {
+		inners = append(inners, fmt.Sprintf("i(%s)", strings.Join(p.CVSS.I, ",")))
+	}
+	if len(p.CVSS.A) > 0 {
+		inners = append(inners, fmt.Sprintf("a(%s)", strings.Join(p.CVSS.A, ",")))
+	}
+	return fmt.Sprintf("cvss(%s)", strings.Join(inners, ","))
 }
