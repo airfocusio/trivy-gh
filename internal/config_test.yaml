@@ -41,3 +41,14 @@ policies:
       i: H
       a: H
   mitigate: no-public-networking
+- matchers:
+  - not:
+      id: CVE-1
+- matchers:
+  - and:
+    - id: CVE-2
+    - id: CVE-3
+- matchers:
+  - or:
+    - id: CVE-4
+    - id: CVE-5

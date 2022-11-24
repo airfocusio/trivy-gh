@@ -9,66 +9,125 @@ import (
 )
 
 type PolicyMatcher interface {
+	IsNonEmpty() bool
 	IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool
 }
 
 func PolicyMatcherUnmarshalYAML(value *yaml.Node) (PolicyMatcher, error) {
+	nonEmpty := []PolicyMatcher{}
+
+	not := NotPolicyMatcher{}
+	if err := value.Decode(&not); err != nil {
+		return nil, err
+	} else if not.IsNonEmpty() {
+		nonEmpty = append(nonEmpty, &not)
+	}
+
+	and := AndPolicyMatcher{}
+	if err := value.Decode(&and); err != nil {
+		return nil, err
+	} else if and.IsNonEmpty() {
+		nonEmpty = append(nonEmpty, &and)
+	}
+
+	or := OrPolicyMatcher{}
+	if err := value.Decode(&or); err != nil {
+		return nil, err
+	} else if or.IsNonEmpty() {
+		nonEmpty = append(nonEmpty, &or)
+	}
+
 	id := IDPolicyMatcher{}
-	if err := id.UnmarshalYAML(value); err == nil {
-		return &id, nil
+	if err := value.Decode(&id); err != nil {
+		return nil, err
+	} else if id.IsNonEmpty() {
+		nonEmpty = append(nonEmpty, &id)
 	}
 
 	artifactNameShort := ArtifactNameShortPolicyMatcher{}
-	if err := artifactNameShort.UnmarshalYAML(value); err == nil {
-		return &artifactNameShort, nil
+	if err := value.Decode(&artifactNameShort); err != nil {
+		return nil, err
+	} else if artifactNameShort.IsNonEmpty() {
+		nonEmpty = append(nonEmpty, &artifactNameShort)
 	}
 
 	packageName := PackageNamePolicyMatcher{}
-	if err := packageName.UnmarshalYAML(value); err == nil {
-		return &packageName, nil
+	if err := value.Decode(&packageName); err != nil {
+		return nil, err
+	} else if packageName.IsNonEmpty() {
+		nonEmpty = append(nonEmpty, &packageName)
 	}
 
 	class := ClassPolicyMatcher{}
-	if err := class.UnmarshalYAML(value); err == nil {
-		return &class, nil
+	if err := value.Decode(&class); err != nil {
+		return nil, err
+	} else if class.IsNonEmpty() {
+		nonEmpty = append(nonEmpty, &class)
 	}
 
 	cvss := CVSSPolicyMatcher{}
-	if err := cvss.UnmarshalYAML(value); err == nil {
-		return &cvss, nil
+	if err := value.Decode(&cvss); err != nil {
+		return nil, err
+	} else if cvss.IsNonEmpty() {
+		nonEmpty = append(nonEmpty, &cvss)
+	}
+
+	if len(nonEmpty) == 1 {
+		return nonEmpty[0], nil
 	}
 
 	str, err := yaml.Marshal(value)
 	if err != nil {
 		return nil, err
 	}
+
 	return nil, fmt.Errorf("unable to unmarshall matcher `%s`", strings.ReplaceAll(string(str), "\n", "\\n"))
 }
 
-var _ PolicyMatcher = (*YesPolicyMatcher)(nil)
+var _ PolicyMatcher = (*NotPolicyMatcher)(nil)
 
-type YesPolicyMatcher struct{}
-
-func (p *YesPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
-	return true
+type NotPolicyMatcher struct {
+	Not PolicyMatcher `yaml:"not"`
 }
 
-var _ PolicyMatcher = (*NoPolicyMatcher)(nil)
+func (p *NotPolicyMatcher) IsNonEmpty() bool {
+	return p.Not != nil && p.Not.IsNonEmpty()
+}
 
-type NoPolicyMatcher struct{}
+func (p *NotPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
+	return !p.Not.IsMatch(report, res, vuln)
+}
 
-func (p *NoPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
-	return false
+func (c *NotPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
+	var raw map[string](yaml.Node)
+	err := value.Decode(&raw)
+	if err != nil {
+		return nil
+	}
+	valueNot, ok := raw["not"]
+	if !ok {
+		return nil
+	}
+	not, err := PolicyMatcherUnmarshalYAML(&valueNot)
+	if err != nil {
+		return err
+	}
+	c.Not = not
+	return nil
 }
 
 var _ PolicyMatcher = (*AndPolicyMatcher)(nil)
 
 type AndPolicyMatcher struct {
-	Inner []PolicyMatcher
+	And []PolicyMatcher `yaml:"and"`
+}
+
+func (p *AndPolicyMatcher) IsNonEmpty() bool {
+	return len(p.And) > 0
 }
 
 func (p *AndPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
-	for _, i := range p.Inner {
+	for _, i := range p.And {
 		if !i.IsMatch(report, res, vuln) {
 			return false
 		}
@@ -76,14 +135,38 @@ func (p *AndPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln t
 	return true
 }
 
+func (c *AndPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
+	var raw map[string]([]yaml.Node)
+	err := value.Decode(&raw)
+	if err != nil {
+		return nil
+	}
+	valuesAnd, ok := raw["and"]
+	if !ok {
+		return nil
+	}
+	for _, valueAnd := range valuesAnd {
+		and, err := PolicyMatcherUnmarshalYAML(&valueAnd)
+		if err != nil {
+			return err
+		}
+		c.And = append(c.And, and)
+	}
+	return nil
+}
+
 var _ PolicyMatcher = (*OrPolicyMatcher)(nil)
 
 type OrPolicyMatcher struct {
-	Inner []PolicyMatcher
+	Or []PolicyMatcher `yaml:"or"`
+}
+
+func (p *OrPolicyMatcher) IsNonEmpty() bool {
+	return len(p.Or) > 0
 }
 
 func (p *OrPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
-	for _, i := range p.Inner {
+	for _, i := range p.Or {
 		if i.IsMatch(report, res, vuln) {
 			return true
 		}
@@ -91,10 +174,34 @@ func (p *OrPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln ty
 	return false
 }
 
+func (c *OrPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
+	var raw map[string]([]yaml.Node)
+	err := value.Decode(&raw)
+	if err != nil {
+		return nil
+	}
+	valuesOr, ok := raw["or"]
+	if !ok {
+		return nil
+	}
+	for _, valueOr := range valuesOr {
+		or, err := PolicyMatcherUnmarshalYAML(&valueOr)
+		if err != nil {
+			return err
+		}
+		c.Or = append(c.Or, or)
+	}
+	return nil
+}
+
 var _ PolicyMatcher = (*IDPolicyMatcher)(nil)
 
 type IDPolicyMatcher struct {
 	ID StringArray `yaml:"id"`
+}
+
+func (p *IDPolicyMatcher) IsNonEmpty() bool {
+	return len(p.ID) > 0
 }
 
 func (p *IDPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
@@ -106,22 +213,14 @@ func (p *IDPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln ty
 	return false
 }
 
-func (c *IDPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
-	type IDPolicyMatcher2 IDPolicyMatcher
-	err := value.Decode((*IDPolicyMatcher2)(c))
-	if err != nil {
-		return err
-	}
-	if len(c.ID) == 0 {
-		return fmt.Errorf("not a IDPolicyMatcher")
-	}
-	return nil
-}
-
 var _ PolicyMatcher = (*ArtifactNameShortPolicyMatcher)(nil)
 
 type ArtifactNameShortPolicyMatcher struct {
 	ArtifactNameShort StringArray `yaml:"artifactNameShort"`
+}
+
+func (p *ArtifactNameShortPolicyMatcher) IsNonEmpty() bool {
+	return len(p.ArtifactNameShort) > 0
 }
 
 func (p *ArtifactNameShortPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
@@ -133,22 +232,14 @@ func (p *ArtifactNameShortPolicyMatcher) IsMatch(report types.Report, res types.
 	return false
 }
 
-func (c *ArtifactNameShortPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
-	type ArtifactNameShortPolicyMatcher2 ArtifactNameShortPolicyMatcher
-	err := value.Decode((*ArtifactNameShortPolicyMatcher2)(c))
-	if err != nil {
-		return err
-	}
-	if len(c.ArtifactNameShort) == 0 {
-		return fmt.Errorf("not a ArtifactNameShortPolicyMatcher")
-	}
-	return nil
-}
-
 var _ PolicyMatcher = (*PackageNamePolicyMatcher)(nil)
 
 type PackageNamePolicyMatcher struct {
 	PackageName StringArray `yaml:"packageName"`
+}
+
+func (p *PackageNamePolicyMatcher) IsNonEmpty() bool {
+	return len(p.PackageName) > 0
 }
 
 func (p *PackageNamePolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
@@ -160,22 +251,14 @@ func (p *PackageNamePolicyMatcher) IsMatch(report types.Report, res types.Result
 	return false
 }
 
-func (c *PackageNamePolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
-	type PackageNamePolicyMatcher2 PackageNamePolicyMatcher
-	err := value.Decode((*PackageNamePolicyMatcher2)(c))
-	if err != nil {
-		return err
-	}
-	if len(c.PackageName) == 0 {
-		return fmt.Errorf("not a PackageNamePolicyMatcher")
-	}
-	return nil
-}
-
 var _ PolicyMatcher = (*ClassPolicyMatcher)(nil)
 
 type ClassPolicyMatcher struct {
 	Class StringArray `yaml:"class"`
+}
+
+func (p *ClassPolicyMatcher) IsNonEmpty() bool {
+	return len(p.Class) > 0
 }
 
 func (p *ClassPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
@@ -185,18 +268,6 @@ func (p *ClassPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln
 		}
 	}
 	return false
-}
-
-func (c *ClassPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
-	type ClassPolicyMatcher2 ClassPolicyMatcher
-	err := value.Decode((*ClassPolicyMatcher2)(c))
-	if err != nil {
-		return err
-	}
-	if len(c.Class) == 0 {
-		return fmt.Errorf("not a ClassPolicyMatcher")
-	}
-	return nil
 }
 
 type CVSSPolicyMatcher struct {
@@ -213,6 +284,18 @@ type CVSSPolicyMatcherCVSS struct {
 	C              StringArray `yaml:"c"`
 	I              StringArray `yaml:"i"`
 	A              StringArray `yaml:"a"`
+}
+
+func (c *CVSSPolicyMatcher) IsNonEmpty() bool {
+	return c.CVSS.ScoreLowerThan > 0 ||
+		len(c.CVSS.AV) > 0 ||
+		len(c.CVSS.AC) > 0 ||
+		len(c.CVSS.PR) > 0 ||
+		len(c.CVSS.UI) > 0 ||
+		len(c.CVSS.S) > 0 ||
+		len(c.CVSS.C) > 0 ||
+		len(c.CVSS.I) > 0 ||
+		len(c.CVSS.A) > 0
 }
 
 func (p *CVSSPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
@@ -247,16 +330,4 @@ func (p *CVSSPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln 
 	}
 
 	return true
-}
-
-func (c *CVSSPolicyMatcher) UnmarshalYAML(value *yaml.Node) error {
-	type CVSSPolicyMatcher2 CVSSPolicyMatcher
-	err := value.Decode((*CVSSPolicyMatcher2)(c))
-	if err != nil {
-		return err
-	}
-	if c.CVSS.ScoreLowerThan == 0 && len(c.CVSS.AV) == 0 && len(c.CVSS.AC) == 0 && len(c.CVSS.PR) == 0 && len(c.CVSS.UI) == 0 && len(c.CVSS.S) == 0 && len(c.CVSS.C) == 0 && len(c.CVSS.I) == 0 && len(c.CVSS.A) == 0 {
-		return fmt.Errorf("not a CVSSPolicyMatcher")
-	}
-	return nil
 }

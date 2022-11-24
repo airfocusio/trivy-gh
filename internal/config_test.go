@@ -41,7 +41,7 @@ func TestLoadConfig(t *testing.T) {
 				{
 					Comment: "Comment 1\n",
 					Match: &AndPolicyMatcher{
-						Inner: []PolicyMatcher{
+						And: []PolicyMatcher{
 							&IDPolicyMatcher{
 								ID: []string{"CVE-0"},
 							},
@@ -52,7 +52,7 @@ func TestLoadConfig(t *testing.T) {
 				{
 					Comment: "Comment 2",
 					Match: &AndPolicyMatcher{
-						Inner: []PolicyMatcher{
+						And: []PolicyMatcher{
 							&ArtifactNameShortPolicyMatcher{
 								ArtifactNameShort: []string{"debian"},
 							},
@@ -62,7 +62,7 @@ func TestLoadConfig(t *testing.T) {
 				},
 				{
 					Match: &AndPolicyMatcher{
-						Inner: []PolicyMatcher{
+						And: []PolicyMatcher{
 							&PackageNamePolicyMatcher{
 								PackageName: []string{"sh", "bash"},
 							},
@@ -72,7 +72,7 @@ func TestLoadConfig(t *testing.T) {
 				},
 				{
 					Match: &AndPolicyMatcher{
-						Inner: []PolicyMatcher{
+						And: []PolicyMatcher{
 							&ClassPolicyMatcher{
 								Class: []string{"os-pkgs"},
 							},
@@ -82,7 +82,7 @@ func TestLoadConfig(t *testing.T) {
 				},
 				{
 					Match: &AndPolicyMatcher{
-						Inner: []PolicyMatcher{
+						And: []PolicyMatcher{
 							&CVSSPolicyMatcher{
 								CVSS: CVSSPolicyMatcherCVSS{
 									AV: []string{"N", "L"},
@@ -98,6 +98,49 @@ func TestLoadConfig(t *testing.T) {
 						},
 					},
 					Mitigate: []string{"no-public-networking"},
+				},
+				{
+					Match: &AndPolicyMatcher{
+						And: []PolicyMatcher{
+							&NotPolicyMatcher{
+								Not: &IDPolicyMatcher{
+									ID: []string{"CVE-1"},
+								},
+							},
+						},
+					},
+				},
+				{
+					Match: &AndPolicyMatcher{
+						And: []PolicyMatcher{
+							&AndPolicyMatcher{
+								And: []PolicyMatcher{
+									&IDPolicyMatcher{
+										ID: []string{"CVE-2"},
+									},
+									&IDPolicyMatcher{
+										ID: []string{"CVE-3"},
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Match: &AndPolicyMatcher{
+						And: []PolicyMatcher{
+							&OrPolicyMatcher{
+								Or: []PolicyMatcher{
+									&IDPolicyMatcher{
+										ID: []string{"CVE-4"},
+									},
+									&IDPolicyMatcher{
+										ID: []string{"CVE-5"},
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 		}

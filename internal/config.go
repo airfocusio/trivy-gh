@@ -53,7 +53,7 @@ func (c *ConfigPolicy) UnmarshalYAML(value *yaml.Node) error {
 			matchers = append(matchers, pm)
 		}
 	}
-	c.Match = &AndPolicyMatcher{Inner: matchers}
+	c.Match = &AndPolicyMatcher{And: matchers}
 	c.Ignore = raw.Ignore
 	c.Mitigate = raw.Mitigate
 	return nil

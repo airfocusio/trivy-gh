@@ -8,29 +8,53 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var _ PolicyMatcher = (*YesPolicyMatcher)(nil)
+
+type YesPolicyMatcher struct{}
+
+func (p *YesPolicyMatcher) IsNonEmpty() bool {
+	return true
+}
+
+func (p *YesPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
+	return true
+}
+
+var _ PolicyMatcher = (*NoPolicyMatcher)(nil)
+
+type NoPolicyMatcher struct{}
+
+func (p *NoPolicyMatcher) IsNonEmpty() bool {
+	return true
+}
+
+func (p *NoPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln types.DetectedVulnerability) bool {
+	return false
+}
+
 func TestAndPolicyMatcher(t *testing.T) {
 	p1 := AndPolicyMatcher{}
 	assert.Equal(t, true, p1.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
-	p2 := AndPolicyMatcher{Inner: []PolicyMatcher{&YesPolicyMatcher{}}}
+	p2 := AndPolicyMatcher{And: []PolicyMatcher{&YesPolicyMatcher{}}}
 	assert.Equal(t, true, p2.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
-	p3 := AndPolicyMatcher{Inner: []PolicyMatcher{&YesPolicyMatcher{}, &YesPolicyMatcher{}}}
+	p3 := AndPolicyMatcher{And: []PolicyMatcher{&YesPolicyMatcher{}, &YesPolicyMatcher{}}}
 	assert.Equal(t, true, p3.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
-	p4 := AndPolicyMatcher{Inner: []PolicyMatcher{&NoPolicyMatcher{}}}
+	p4 := AndPolicyMatcher{And: []PolicyMatcher{&NoPolicyMatcher{}}}
 	assert.Equal(t, false, p4.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
-	p5 := AndPolicyMatcher{Inner: []PolicyMatcher{&YesPolicyMatcher{}, &NoPolicyMatcher{}}}
+	p5 := AndPolicyMatcher{And: []PolicyMatcher{&YesPolicyMatcher{}, &NoPolicyMatcher{}}}
 	assert.Equal(t, false, p5.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
 }
 
 func TestOrPolicyMatcher(t *testing.T) {
 	p1 := OrPolicyMatcher{}
 	assert.Equal(t, false, p1.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
-	p2 := OrPolicyMatcher{Inner: []PolicyMatcher{&YesPolicyMatcher{}}}
+	p2 := OrPolicyMatcher{Or: []PolicyMatcher{&YesPolicyMatcher{}}}
 	assert.Equal(t, true, p2.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
-	p3 := OrPolicyMatcher{Inner: []PolicyMatcher{&YesPolicyMatcher{}, &YesPolicyMatcher{}}}
+	p3 := OrPolicyMatcher{Or: []PolicyMatcher{&YesPolicyMatcher{}, &YesPolicyMatcher{}}}
 	assert.Equal(t, true, p3.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
-	p4 := OrPolicyMatcher{Inner: []PolicyMatcher{&NoPolicyMatcher{}}}
+	p4 := OrPolicyMatcher{Or: []PolicyMatcher{&NoPolicyMatcher{}}}
 	assert.Equal(t, false, p4.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
-	p5 := OrPolicyMatcher{Inner: []PolicyMatcher{&YesPolicyMatcher{}, &NoPolicyMatcher{}}}
+	p5 := OrPolicyMatcher{Or: []PolicyMatcher{&YesPolicyMatcher{}, &NoPolicyMatcher{}}}
 	assert.Equal(t, true, p5.IsMatch(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
 }
 
