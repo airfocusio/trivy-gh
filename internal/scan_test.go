@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,14 +109,22 @@ func TestRenderGithubDashboardIssueBody(t *testing.T) {
 		"\n"+
 		"The following issues have not been created yet, as the rate limit for issue creation has been exceeded. They will be created later.\n"+
 		"\n"+
-		"- [ ] [CVE-1](https://domain.com/cve-1) **low** (0.1) `rate-limited:1.2.3`\n"+
-		"- [ ] []() **unknown** (0.0) ``\n"+
+		"#### rate-limited:1.2.3\n"+
+		"\n"+
+		"- [ ] [CVE-1](https://domain.com/cve-1) **low** (0.1) `pkg1`\n"+
+		"- [ ] [CVE-2](https://domain.com/cve-2) **medium** (4.0) `pkg2`\n"+
+		"\n"+
+		"#### rate-limited-2:1.2.3\n"+
+		"\n"+
+		"- [ ] [CVE-3](https://domain.com/cve-3) **high** (7.0) `pkg3`\n"+
 		"\n"+
 		"### Mitigated\n"+
 		"\n"+
 		"The following issues are still found, but have been marked as mitigated by some policy. They will stay here in this list until finally fixed.\n"+
 		"\n"+
-		"- [ ] [CVE-0](https://domain.com/cve-0) **critical** (10.0) `mitigated:1.2.3` ``: Mitigation: Policy\n"+
+		"#### mitigated:1.2.3\n"+
+		"\n"+
+		"- [ ] [CVE-0](https://domain.com/cve-0) **critical** (10.0) `pkg0`: Mitigation: Policy\n"+
 		"\n"+
 		"<!-- id=abc123 -->",
 		scan.RenderGithubDashboardIssueBody([]ProcessedUnfixedVulnerability{
@@ -127,6 +136,7 @@ func TestRenderGithubDashboardIssueBody(t *testing.T) {
 				vulnerability: types.DetectedVulnerability{
 					VulnerabilityID: "CVE-0",
 					PrimaryURL:      "https://domain.com/cve-0",
+					PkgName:         "pkg0",
 					Vulnerability: trivydbtypes.Vulnerability{
 						CVSS: trivydbtypes.VendorCVSS{
 							"nvd": trivydbtypes.CVSS{
@@ -151,6 +161,7 @@ func TestRenderGithubDashboardIssueBody(t *testing.T) {
 				vulnerability: types.DetectedVulnerability{
 					VulnerabilityID: "CVE-1",
 					PrimaryURL:      "https://domain.com/cve-1",
+					PkgName:         "pkg1",
 					Vulnerability: trivydbtypes.Vulnerability{
 						CVSS: trivydbtypes.VendorCVSS{
 							"nvd": trivydbtypes.CVSS{
@@ -160,7 +171,40 @@ func TestRenderGithubDashboardIssueBody(t *testing.T) {
 					},
 				},
 			},
-			{},
+			{
+				report: types.Report{
+					ArtifactName: "rate-limited:1.2.3",
+				},
+				vulnerability: types.DetectedVulnerability{
+					VulnerabilityID: "CVE-2",
+					PrimaryURL:      "https://domain.com/cve-2",
+					PkgName:         "pkg2",
+					Vulnerability: trivydbtypes.Vulnerability{
+						CVSS: trivydbtypes.VendorCVSS{
+							"nvd": trivydbtypes.CVSS{
+								V3Score: 4,
+							},
+						},
+					},
+				},
+			},
+			{
+				report: types.Report{
+					ArtifactName: "rate-limited-2:1.2.3",
+				},
+				vulnerability: types.DetectedVulnerability{
+					VulnerabilityID: "CVE-3",
+					PrimaryURL:      "https://domain.com/cve-3",
+					PkgName:         "pkg3",
+					Vulnerability: trivydbtypes.Vulnerability{
+						CVSS: trivydbtypes.VendorCVSS{
+							"nvd": trivydbtypes.CVSS{
+								V3Score: 7,
+							},
+						},
+					},
+				},
+			},
 		}, "<!-- id=abc123 -->"))
 }
 
@@ -254,17 +298,20 @@ func TestScan(t *testing.T) {
 	}
 
 	// create
-	issueNumbers1, err := scan.ProcessUnfixedVulnerabilities(artifactNameShort, []*types.Report{&report1})
+	issueNumbers1, err := scan.ProcessUnfixedVulnerability(artifactNameShort, report1, report1.Results[0], report1.Results[0].Vulnerabilities[0])
 	assert.NoError(t, err)
-	assert.Len(t, issueNumbers1, 1)
-	issueNumber := *issueNumbers1[0].issueNumber
+	issueNumber := *issueNumbers1.issueNumber
 	defer func() {
 		closed := "closed"
 		scan.githubClient.Issues.Edit(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber, &github.IssueRequest{
 			State: &closed,
 		})
-		labels := generateVulnerabilityLabels(artifactNameShort, report1.Results[0].Vulnerabilities[0])
-		labels = labels[0 : len(labels)-1]
+		labels := []string{}
+		for _, l := range generateVulnerabilityLabels(artifactNameShort, report1.Results[0].Vulnerabilities[0]) {
+			if !strings.HasPrefix(l, "s:") {
+				labels = append(labels, l)
+			}
+		}
 		for _, l := range labels {
 			scan.githubClient.Issues.DeleteLabel(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, l)
 		}
@@ -314,21 +361,17 @@ func TestScan(t *testing.T) {
 	}
 
 	// reopen as it has come back
-	issueNumbers5, err := scan.ProcessUnfixedVulnerabilities(artifactNameShort, []*types.Report{&report1})
+	issueNumbers5, err := scan.ProcessUnfixedVulnerability(artifactNameShort, report1, report1.Results[0], report1.Results[0].Vulnerabilities[0])
 	assert.NoError(t, err)
-	if assert.Len(t, issueNumbers5, 1) {
-		assert.Equal(t, issueNumber, *issueNumbers5[0].issueNumber)
-	}
+	assert.Equal(t, issueNumber, *issueNumbers5.issueNumber)
 	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
 		assert.Equal(t, "open", *issue.State)
 	}
 
 	// close again as it is mitigated by policy
-	issueNumbers6, err := scan.ProcessUnfixedVulnerabilities(artifactNameShort, []*types.Report{&report2})
+	issueNumbers6, err := scan.ProcessUnfixedVulnerability(artifactNameShort, report2, report2.Results[0], report2.Results[0].Vulnerabilities[0])
 	assert.NoError(t, err)
-	if assert.Len(t, issueNumbers6, 1) {
-		assert.Equal(t, issueNumber, *issueNumbers6[0].issueNumber)
-	}
+	assert.Equal(t, issueNumber, *issueNumbers6.issueNumber)
 	if issue, _, err := scan.githubClient.Issues.Get(scan.ctx, scan.config.Github.IssueRepoOwner, scan.config.Github.IssueRepoName, issueNumber); assert.NoError(t, err) {
 		assert.Equal(t, "closed", *issue.State)
 	}

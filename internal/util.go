@@ -63,16 +63,6 @@ func StringsUnique(strSlice []string) []string {
 	return list
 }
 
-func StringsNonEmpty(strSlice []string) []string {
-	result := []string{}
-	for _, str := range strSlice {
-		if str != "" {
-			result = append(result, str)
-		}
-	}
-	return result
-}
-
 func StringSanitize(s string) string {
 	trimmed := strings.Trim(s, "\n ")
 	lines := strings.Split(trimmed, "\n")

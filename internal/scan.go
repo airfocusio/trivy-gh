@@ -36,6 +36,12 @@ type Mitigation struct {
 	Policy     ConfigPolicy
 }
 
+type UnfixedVulnerability struct {
+	report        types.Report
+	result        types.Result
+	vulnerability types.DetectedVulnerability
+}
+
 type ProcessedUnfixedVulnerability struct {
 	issueNumber   *int
 	mitigations   []Mitigation
@@ -73,61 +79,67 @@ func (s *Scan) Run() error {
 		return nil
 	}
 
-	artifactGroups := map[string][]string{}
+	artifactNames := []string{}
 	for _, file := range files {
-		as, err := s.ScrapeFile(file)
+		ans, err := s.ScrapeFile(file)
 		if err != nil {
 			return err
 		}
-		for _, a := range as {
-			artifactNameShort := strings.SplitN(a, ":", 2)[0]
-			if _, ok := artifactGroups[artifactNameShort]; !ok {
-				artifactGroups[artifactNameShort] = []string{}
-			}
-			artifactGroups[artifactNameShort] = append(artifactGroups[artifactNameShort], a)
-		}
+		artifactNames = append(artifactNames, ans...)
 	}
-	for artifactNameShort := range artifactGroups {
-		artifactGroups[artifactNameShort] = StringsUnique(artifactGroups[artifactNameShort])
-		sort.Strings(artifactGroups[artifactNameShort])
-	}
+	artifactNames = StringsUnique(artifactNames)
+	sort.Strings(artifactNames)
 
-	allUnfixedVulnerabilities := []ProcessedUnfixedVulnerability{}
+	allProcessedUnfixedVulnerabilities := []ProcessedUnfixedVulnerability{}
 	unfixedIssueNumbers := []int{}
-	for artifactNameShort, artifacts := range artifactGroups {
-		s.logger.Info.Printf("Scanning artifact group %s ...\n", artifactNameShort)
+	for _, artifactName := range artifactNames {
+		artifactNameShort := strings.SplitN(artifactName, ":", 2)[0]
+
+		s.logger.Info.Printf("Scanning artifact %s ...\n", artifactName)
 		unnest := s.logger.Nest()
 
-		reports := []*types.Report{}
-		for _, artifactName := range artifacts {
-			s.logger.Info.Printf("Scanning artifact %s ...\n", artifactName)
-			report, err := TrivyImage(s.ctx, s.dir, artifactName)
-			if err != nil {
-				unnest()
-				return err
-			}
-			reports = append(reports, report)
-		}
-		unfixedVulnerabilities, err := s.ProcessUnfixedVulnerabilities(artifactNameShort, reports)
-		unnest()
-
+		report, err := TrivyImage(s.ctx, s.dir, artifactName)
 		if err != nil {
+			unnest()
 			return err
 		}
-
-		allUnfixedVulnerabilities = append(allUnfixedVulnerabilities, unfixedVulnerabilities...)
-		for _, puv := range unfixedVulnerabilities {
-			if puv.issueNumber != nil {
-				unfixedIssueNumbers = append(unfixedIssueNumbers, *puv.issueNumber)
+		unfixedVulnerabilities := []UnfixedVulnerability{}
+		for _, res := range report.Results {
+			for _, vuln := range res.Vulnerabilities {
+				unfixedVulnerabilities = append(unfixedVulnerabilities, UnfixedVulnerability{
+					report:        *report,
+					result:        res,
+					vulnerability: vuln,
+				})
 			}
 		}
+		sort.SliceStable(unfixedVulnerabilities, func(i, j int) bool {
+			_, is, _ := FindVulnerabilityCVSSV3(unfixedVulnerabilities[i].vulnerability)
+			_, js, _ := FindVulnerabilityCVSSV3(unfixedVulnerabilities[j].vulnerability)
+			return is > js
+		})
+
+		for _, unfixedVulnerability := range unfixedVulnerabilities {
+			processedUnfixedVulnerability, err := s.ProcessUnfixedVulnerability(artifactNameShort, unfixedVulnerability.report, unfixedVulnerability.result, unfixedVulnerability.vulnerability)
+			if err != nil {
+				return err
+			}
+			if processedUnfixedVulnerability != nil {
+				allProcessedUnfixedVulnerabilities = append(allProcessedUnfixedVulnerabilities, *processedUnfixedVulnerability)
+				if processedUnfixedVulnerability.issueNumber != nil {
+					unfixedIssueNumbers = append(unfixedIssueNumbers, *processedUnfixedVulnerability.issueNumber)
+				}
+			}
+		}
+
+		unnest()
 	}
 
 	if _, err := s.ProcessFixedVulnerabilities("", unfixedIssueNumbers); err != nil {
 		return err
 	}
 
-	if err := s.ProcessDashboard(allUnfixedVulnerabilities); err != nil {
+	if err := s.ProcessDashboard(allProcessedUnfixedVulnerabilities); err != nil {
 		return err
 	}
 
@@ -324,25 +336,6 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 			}, nil
 		}
 	}
-}
-
-func (s *Scan) ProcessUnfixedVulnerabilities(artifactNameShort string, reports []*types.Report) ([]ProcessedUnfixedVulnerability, error) {
-	processedVulnerabilities := []ProcessedUnfixedVulnerability{}
-	for _, report := range reports {
-		for _, res := range report.Results {
-			for _, vuln := range res.Vulnerabilities {
-				processVulnerability, err := s.ProcessUnfixedVulnerability(artifactNameShort, *report, res, vuln)
-				if err != nil {
-					return nil, err
-				}
-				if processVulnerability != nil {
-					processedVulnerabilities = append(processedVulnerabilities, *processVulnerability)
-				}
-			}
-		}
-	}
-
-	return processedVulnerabilities, nil
 }
 
 func (s *Scan) ProcessFixedVulnerabilities(artifactNameShort string, unfixedIssueNumbers []int) ([]int, error) {
@@ -552,26 +545,60 @@ func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln
 }
 
 func (s *Scan) RenderGithubDashboardIssueBody(allUnfixedVulnerabilities []ProcessedUnfixedVulnerability, footer string) string {
-	rateLimited := ""
-	rateLimitedTasks := []string{}
-	for _, vuln := range allUnfixedVulnerabilities {
-		if len(vuln.mitigations) == 0 && vuln.issueNumber == nil {
-			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
-			rateLimitedTasks = append(rateLimitedTasks, fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s`", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.report.ArtifactName))
-		}
+	type Group struct {
+		Headline string
+		Lines    []string
 	}
-	if len(rateLimitedTasks) > 0 {
-		rateLimited = strings.Join([]string{
-			"### Rate limited",
-			"The following issues have not been created yet, as the rate limit for issue creation has been exceeded. They will be created later.",
-			strings.Join(rateLimitedTasks, "\n"),
-		}, "\n\n")
+	filterFn := func(elems []ProcessedUnfixedVulnerability, fn func(ProcessedUnfixedVulnerability) bool) []ProcessedUnfixedVulnerability {
+		result := []ProcessedUnfixedVulnerability{}
+		for _, e := range elems {
+			if fn(e) {
+				result = append(result, e)
+			}
+		}
+		return result
+	}
+	groupFn := func(elems []ProcessedUnfixedVulnerability, fn func(ProcessedUnfixedVulnerability) string) []Group {
+		groups := []Group{}
+
+		for _, vuln := range elems {
+			if len(groups) == 0 || groups[len(groups)-1].Headline != vuln.report.ArtifactName {
+				groups = append(groups, Group{
+					Headline: vuln.report.ArtifactName,
+				})
+			}
+			group := &groups[len(groups)-1]
+			group.Lines = append(group.Lines, fn(vuln))
+		}
+
+		return groups
+	}
+	segments := []string{}
+
+	rateLimited := filterFn(allUnfixedVulnerabilities, func(vuln ProcessedUnfixedVulnerability) bool {
+		return len(vuln.mitigations) == 0 && vuln.issueNumber == nil
+	})
+	if len(rateLimited) > 0 {
+		groups := groupFn(rateLimited, func(vuln ProcessedUnfixedVulnerability) string {
+			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
+			return fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s`", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.vulnerability.PkgName)
+		})
+
+		str := "### Rate limited\n\n"
+		str = str + "The following issues have not been created yet, as the rate limit for issue creation has been exceeded. They will be created later.\n\n"
+		for _, group := range groups {
+			str = str + "#### " + group.Headline + "\n\n"
+			str = str + strings.Join(group.Lines, "\n")
+			str = str + "\n\n"
+		}
+		segments = append(segments, StringSanitize(str))
 	}
 
-	mitigated := ""
-	mitigatedTasks := []string{}
-	for _, vuln := range allUnfixedVulnerabilities {
-		if len(vuln.mitigations) > 0 {
+	mitigated := filterFn(allUnfixedVulnerabilities, func(vuln ProcessedUnfixedVulnerability) bool {
+		return len(vuln.mitigations) > 0
+	})
+	if len(mitigated) > 0 {
+		groups := groupFn(mitigated, func(vuln ProcessedUnfixedVulnerability) string {
 			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
 			mitigationTexts := []string{}
 			for _, m := range vuln.mitigations {
@@ -583,18 +610,19 @@ func (s *Scan) RenderGithubDashboardIssueBody(allUnfixedVulnerabilities []Proces
 					mitigationTexts = append(mitigationTexts, sanitizedLabel+": "+sanitizedComment)
 				}
 			}
-			mitigatedTasks = append(mitigatedTasks, fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s` `%s`: %s", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.report.ArtifactName, vuln.vulnerability.PkgName, strings.Join(mitigationTexts, ", ")))
+			return fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s`: %s", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.vulnerability.PkgName, strings.Join(mitigationTexts, ", "))
+		})
+		str := "### Mitigated\n\n"
+		str = str + "The following issues are still found, but have been marked as mitigated by some policy. They will stay here in this list until finally fixed.\n\n"
+		for _, group := range groups {
+			str = str + "#### " + group.Headline + "\n\n"
+			str = str + strings.Join(group.Lines, "\n")
+			str = str + "\n\n"
 		}
-	}
-	if len(mitigatedTasks) > 0 {
-		mitigated = strings.Join([]string{
-			"### Mitigated",
-			"The following issues are still found, but have been marked as mitigated by some policy. They will stay here in this list until finally fixed.",
-			strings.Join(mitigatedTasks, "\n"),
-		}, "\n\n")
+		segments = append(segments, StringSanitize(str))
 	}
 
-	return strings.Join(StringsNonEmpty([]string{rateLimited, mitigated, footer}), "\n\n")
+	return strings.Join(append(segments, footer), "\n\n")
 }
 
 func (s *Scan) ScrapeFile(file string) ([]string, error) {
