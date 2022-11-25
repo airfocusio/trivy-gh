@@ -31,7 +31,7 @@ image: image3:v1
 	}
 	defer os.Remove(file)
 
-	scan := NewScan(NewNullLogger(), Config{}, "../example", true, 0, 0)
+	scan := NewScan(NewNullLogger(), Config{}, "../example", true, 0)
 
 	if files, err := scan.ScrapeFile(file); assert.NoError(t, err) {
 		assert.Equal(t, []string{"image1:v1", "image2:v1", "image3:v1"}, files)
@@ -43,7 +43,7 @@ func TestFindMatchingPolicies(t *testing.T) {
 		p1 := ConfigPolicy{Match: &YesPolicyMatcher{}}
 		scan := NewScan(NewNullLogger(), Config{
 			Policies: []ConfigPolicy{p1},
-		}, "../example", true, 0, 0)
+		}, "../example", true, 0)
 
 		assert.Equal(t, &p1, scan.FindMatchingPolicy(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
 	})
@@ -52,7 +52,7 @@ func TestFindMatchingPolicies(t *testing.T) {
 func TestRenderGithubIssueBody(t *testing.T) {
 	resetGithubToken := temporarySetenv("GITHUB_TOKEN", "token")
 	defer resetGithubToken()
-	scan := NewScan(NewNullLogger(), Config{}, "../example", true, 0, 0)
+	scan := NewScan(NewNullLogger(), Config{}, "../example", true, 0)
 
 	assert.Equal(t, "| Key | Value\n"+
 		"|---|---\n"+
@@ -99,7 +99,7 @@ func TestRenderGithubIssueBody(t *testing.T) {
 func TestRenderGithubDashboardIssueBody(t *testing.T) {
 	resetGithubToken := temporarySetenv("GITHUB_TOKEN", "token")
 	defer resetGithubToken()
-	scan := NewScan(NewNullLogger(), Config{}, "../example", true, 0, 0)
+	scan := NewScan(NewNullLogger(), Config{}, "../example", true, 0)
 	issueNumber := 1
 
 	assert.Equal(t, "<!-- id=abc123 -->",
@@ -244,7 +244,7 @@ func TestScan(t *testing.T) {
 				Mitigate: []string{mitigationKey},
 			},
 		},
-	}, "../example", false, 10, 10)
+	}, "../example", false, 10)
 
 	report1 := types.Report{
 		ArtifactName: artifactName,

@@ -24,9 +24,7 @@ type Scan struct {
 	dir              string
 	dryRun           bool
 	issueCreateLimit int
-	issueUpdateLimit int
 	issuesCreated    int
-	issuesUpdated    int
 	ctx              context.Context
 	githubClient     *github.Client
 }
@@ -50,7 +48,7 @@ type ProcessedUnfixedVulnerability struct {
 	vulnerability types.DetectedVulnerability
 }
 
-func NewScan(logger Logger, config Config, dir string, dryRun bool, issueCreateLimit int, issueUpdateLimit int) Scan {
+func NewScan(logger Logger, config Config, dir string, dryRun bool, issueCreateLimit int) Scan {
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: config.Github.Token},
@@ -62,7 +60,6 @@ func NewScan(logger Logger, config Config, dir string, dryRun bool, issueCreateL
 		dir:              dir,
 		dryRun:           dryRun,
 		issueCreateLimit: issueCreateLimit,
-		issueUpdateLimit: issueUpdateLimit,
 		ctx:              ctx,
 		githubClient:     github.NewClient(tc),
 	}
@@ -292,16 +289,7 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 		}
 
 		if !compareGithubIssues(*existingIssue, issue) {
-			if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
-				s.logger.Info.Printf("Skipped updating issue #%d [limit exceeded]\n", *existingIssue.Number)
-				return &ProcessedUnfixedVulnerability{
-					issueNumber:   existingIssue.Number,
-					mitigations:   mitigations,
-					report:        report,
-					result:        res,
-					vulnerability: vuln,
-				}, nil
-			} else if s.dryRun {
+			if s.dryRun {
 				s.logger.Info.Printf("Skipped updating issue #%d [dry run]\n", *existingIssue.Number)
 				return &ProcessedUnfixedVulnerability{
 					issueNumber:   existingIssue.Number,
@@ -317,7 +305,6 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 					return nil, err
 				}
 				s.logger.Info.Printf("Updated issue #%d\n", *existingIssue.Number)
-				s.issuesUpdated = s.issuesUpdated + 1
 				return &ProcessedUnfixedVulnerability{
 					issueNumber:   existingIssue.Number,
 					mitigations:   mitigations,
@@ -377,9 +364,7 @@ func (s *Scan) ProcessFixedVulnerabilities(artifactNameShort string, unfixedIssu
 		issue := github.IssueRequest{
 			State: &state,
 		}
-		if s.issueUpdateLimit >= 0 && s.issuesUpdated >= s.issueUpdateLimit {
-			s.logger.Info.Printf("Skipped updating issue #%d [limit exceeded]\n", *fixedIssue.Number)
-		} else if s.dryRun {
+		if s.dryRun {
 			s.logger.Info.Printf("Skipped updating issue #%d [dry run]\n", *fixedIssue.Number)
 		} else {
 			_, updatedIssueRes, err := s.githubClient.Issues.Edit(s.ctx, s.config.Github.IssueRepoOwner, s.config.Github.IssueRepoName, *fixedIssue.Number, &issue)
@@ -389,7 +374,6 @@ func (s *Scan) ProcessFixedVulnerabilities(artifactNameShort string, unfixedIssu
 			}
 			issueNumbers = append(issueNumbers, *fixedIssue.Number)
 			s.logger.Info.Printf("Updated issue #%d\n", *fixedIssue.Number)
-			s.issuesUpdated = s.issuesUpdated + 1
 		}
 
 		unnest()
