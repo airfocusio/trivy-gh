@@ -87,7 +87,7 @@ func (s *Scan) Run() error {
 		}
 		artifactNames = append(artifactNames, ans...)
 	}
-	artifactNames = StringsUnique(artifactNames)
+	artifactNames = SlicesUnique(artifactNames)
 	sort.Strings(artifactNames)
 
 	allProcessedUnfixedVulnerabilities := []ProcessedUnfixedVulnerability{}

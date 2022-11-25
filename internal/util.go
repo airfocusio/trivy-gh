@@ -42,19 +42,10 @@ func FileResolvePath(dir string, file string) string {
 	return file
 }
 
-func StringsContain(strSlice []string, str string) bool {
-	for _, s := range strSlice {
-		if s == str {
-			return true
-		}
-	}
-	return false
-}
-
-func StringsUnique(strSlice []string) []string {
-	keys := make(map[string]bool)
-	list := []string{}
-	for _, entry := range strSlice {
+func SlicesUnique[E comparable](slice []E) []E {
+	keys := make(map[E]bool)
+	list := []E{}
+	for _, entry := range slice {
 		if _, value := keys[entry]; !value {
 			keys[entry] = true
 			list = append(list, entry)

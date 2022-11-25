@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/aquasecurity/trivy/pkg/types"
+	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
 
@@ -363,28 +364,28 @@ func (p *CVSSPolicyMatcher) IsMatch(report types.Report, res types.Result, vuln 
 	if p.CVSS.ScoreLowerThan != 0 && cvssScore >= p.CVSS.ScoreLowerThan {
 		return false
 	}
-	if len(p.CVSS.AV) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.AV, cvssBaseMetric.AV.String())) {
+	if len(p.CVSS.AV) > 0 && (cvssBaseMetric == nil || !slices.Contains(p.CVSS.AV, cvssBaseMetric.AV.String())) {
 		return false
 	}
-	if len(p.CVSS.AC) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.AC, cvssBaseMetric.AC.String())) {
+	if len(p.CVSS.AC) > 0 && (cvssBaseMetric == nil || !slices.Contains(p.CVSS.AC, cvssBaseMetric.AC.String())) {
 		return false
 	}
-	if len(p.CVSS.PR) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.PR, cvssBaseMetric.PR.String())) {
+	if len(p.CVSS.PR) > 0 && (cvssBaseMetric == nil || !slices.Contains(p.CVSS.PR, cvssBaseMetric.PR.String())) {
 		return false
 	}
-	if len(p.CVSS.UI) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.UI, cvssBaseMetric.UI.String())) {
+	if len(p.CVSS.UI) > 0 && (cvssBaseMetric == nil || !slices.Contains(p.CVSS.UI, cvssBaseMetric.UI.String())) {
 		return false
 	}
-	if len(p.CVSS.S) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.S, cvssBaseMetric.S.String())) {
+	if len(p.CVSS.S) > 0 && (cvssBaseMetric == nil || !slices.Contains(p.CVSS.S, cvssBaseMetric.S.String())) {
 		return false
 	}
-	if len(p.CVSS.C) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.C, cvssBaseMetric.C.String())) {
+	if len(p.CVSS.C) > 0 && (cvssBaseMetric == nil || !slices.Contains(p.CVSS.C, cvssBaseMetric.C.String())) {
 		return false
 	}
-	if len(p.CVSS.I) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.I, cvssBaseMetric.I.String())) {
+	if len(p.CVSS.I) > 0 && (cvssBaseMetric == nil || !slices.Contains(p.CVSS.I, cvssBaseMetric.I.String())) {
 		return false
 	}
-	if len(p.CVSS.A) > 0 && (cvssBaseMetric == nil || !StringsContain(p.CVSS.A, cvssBaseMetric.A.String())) {
+	if len(p.CVSS.A) > 0 && (cvssBaseMetric == nil || !slices.Contains(p.CVSS.A, cvssBaseMetric.A.String())) {
 		return false
 	}
 
