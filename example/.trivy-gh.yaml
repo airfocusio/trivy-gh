@@ -3,12 +3,12 @@ github:
   issueRepo: airfocusio/trivy-gh-test
 files: ^/deployment\.yaml$
 mitigations:
-- comment:  Local exec only.
+- comment:  Local exec only
   match:
     packageName:
     - sh
     - bash
-- comment: Internal container.
+- comment: Internal container
   match:
     cvss:
       av:
