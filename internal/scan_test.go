@@ -38,17 +38,6 @@ image: image3:v1
 	}
 }
 
-func TestFindMatchingPolicies(t *testing.T) {
-	t.Run("MatchAll", func(t *testing.T) {
-		p1 := ConfigPolicy{Match: &YesPolicyMatcher{}}
-		scan := NewScan(NewNullLogger(), Config{
-			Policies: []ConfigPolicy{p1},
-		}, "../example", true, 0)
-
-		assert.Equal(t, &p1, scan.FindMatchingPolicy(types.Report{}, types.Result{}, types.DetectedVulnerability{}))
-	})
-}
-
 func TestRenderGithubIssueBody(t *testing.T) {
 	resetGithubToken := temporarySetenv("GITHUB_TOKEN", "token")
 	defer resetGithubToken()
@@ -111,12 +100,12 @@ func TestRenderGithubDashboardIssueBody(t *testing.T) {
 		"\n"+
 		"#### rate-limited:1.2.3\n"+
 		"\n"+
-		"- [ ] [CVE-1](https://domain.com/cve-1) **low** (0.1) `pkg1`\n"+
-		"- [ ] [CVE-2](https://domain.com/cve-2) **medium** (4.0) `pkg2`\n"+
+		"- [ ] [CVE-2](https://domain.com/cve-2) **low** (0.1) `pkg2`\n"+
+		"- [ ] [CVE-3](https://domain.com/cve-3) **medium** (4.0) `pkg3`\n"+
 		"\n"+
 		"#### rate-limited-2:1.2.3\n"+
 		"\n"+
-		"- [ ] [CVE-3](https://domain.com/cve-3) **high** (7.0) `pkg3`\n"+
+		"- [ ] [CVE-4](https://domain.com/cve-4) **high** (7.0) `pkg4`\n"+
 		"\n"+
 		"### Mitigated\n"+
 		"\n"+
@@ -124,7 +113,11 @@ func TestRenderGithubDashboardIssueBody(t *testing.T) {
 		"\n"+
 		"#### mitigated:1.2.3\n"+
 		"\n"+
-		"- [ ] [CVE-0](https://domain.com/cve-0) **critical** (10.0) `pkg0`: Mitigation: Policy\n"+
+		"- [ ] [CVE-0](https://domain.com/cve-0) **critical** (10.0) `pkg0`: Policy\n"+
+		"\n"+
+		"#### mitigated-2:1.2.3\n"+
+		"\n"+
+		"- [ ] [CVE-1](https://domain.com/cve-1) **medium** (5.0) `pkg1`\n"+
 		"\n"+
 		"<!-- id=abc123 -->",
 		scan.RenderGithubDashboardIssueBody([]ProcessedUnfixedVulnerability{
@@ -145,23 +138,37 @@ func TestRenderGithubDashboardIssueBody(t *testing.T) {
 						},
 					},
 				},
-				mitigations: []Mitigation{{
-					Mitigation: ConfigMitigation{
-						Label: "Mitigation",
+				mitigation: &ConfigPolicy{
+					Comment: "Policy",
+				},
+			},
+			{
+				issueNumber: &issueNumber,
+				report: types.Report{
+					ArtifactName: "mitigated-2:1.2.3",
+				},
+				vulnerability: types.DetectedVulnerability{
+					VulnerabilityID: "CVE-1",
+					PrimaryURL:      "https://domain.com/cve-1",
+					PkgName:         "pkg1",
+					Vulnerability: trivydbtypes.Vulnerability{
+						CVSS: trivydbtypes.VendorCVSS{
+							"nvd": trivydbtypes.CVSS{
+								V3Score: 5,
+							},
+						},
 					},
-					Policy: ConfigPolicy{
-						Comment: "Policy",
-					},
-				}},
+				},
+				mitigation: &ConfigPolicy{},
 			},
 			{
 				report: types.Report{
 					ArtifactName: "rate-limited:1.2.3",
 				},
 				vulnerability: types.DetectedVulnerability{
-					VulnerabilityID: "CVE-1",
-					PrimaryURL:      "https://domain.com/cve-1",
-					PkgName:         "pkg1",
+					VulnerabilityID: "CVE-2",
+					PrimaryURL:      "https://domain.com/cve-2",
+					PkgName:         "pkg2",
 					Vulnerability: trivydbtypes.Vulnerability{
 						CVSS: trivydbtypes.VendorCVSS{
 							"nvd": trivydbtypes.CVSS{
@@ -176,9 +183,9 @@ func TestRenderGithubDashboardIssueBody(t *testing.T) {
 					ArtifactName: "rate-limited:1.2.3",
 				},
 				vulnerability: types.DetectedVulnerability{
-					VulnerabilityID: "CVE-2",
-					PrimaryURL:      "https://domain.com/cve-2",
-					PkgName:         "pkg2",
+					VulnerabilityID: "CVE-3",
+					PrimaryURL:      "https://domain.com/cve-3",
+					PkgName:         "pkg3",
 					Vulnerability: trivydbtypes.Vulnerability{
 						CVSS: trivydbtypes.VendorCVSS{
 							"nvd": trivydbtypes.CVSS{
@@ -193,9 +200,9 @@ func TestRenderGithubDashboardIssueBody(t *testing.T) {
 					ArtifactName: "rate-limited-2:1.2.3",
 				},
 				vulnerability: types.DetectedVulnerability{
-					VulnerabilityID: "CVE-3",
-					PrimaryURL:      "https://domain.com/cve-3",
-					PkgName:         "pkg3",
+					VulnerabilityID: "CVE-4",
+					PrimaryURL:      "https://domain.com/cve-4",
+					PkgName:         "pkg4",
 					Vulnerability: trivydbtypes.Vulnerability{
 						CVSS: trivydbtypes.VendorCVSS{
 							"nvd": trivydbtypes.CVSS{
@@ -220,7 +227,6 @@ func TestScan(t *testing.T) {
 	artifactName := artifactNameShort + ":1.0.0"
 	packageName := "test-package-" + strconv.Itoa(randNum)
 	vulnerabilityId := "TEST-" + strconv.Itoa(randNum)
-	mitigationKey := "too-unimportant-" + strconv.Itoa(randNum)
 
 	scan := NewScan(NewNullLogger(), Config{
 		Github: ConfigGithub{
@@ -228,20 +234,13 @@ func TestScan(t *testing.T) {
 			IssueRepoOwner: "airfocusio",
 			IssueRepoName:  "trivy-gh-test",
 		},
-		Mitigations: []ConfigMitigation{
-			{
-				Key:   mitigationKey,
-				Label: "Too unimportant",
-			},
-		},
-		Policies: []ConfigPolicy{
+		Mitigations: []ConfigPolicy{
 			{
 				Match: &CVSSPolicyMatcher{
 					CVSS: CVSSPolicyMatcherCVSS{
 						ScoreLowerThan: 4,
 					},
 				},
-				Mitigate: []string{mitigationKey},
 			},
 		},
 	}, "../example", false, 10)

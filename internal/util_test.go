@@ -74,6 +74,29 @@ func TestFileList(t *testing.T) {
 	})
 }
 
+func TestSlicesGroupByOrdered(t *testing.T) {
+	assert.Equal(
+		t,
+		[]Group[int, int]{
+			{Key: 0, Values: []int{0, 2, 4}},
+			{Key: 1, Values: []int{1, 3, 5}},
+		},
+		SlicesGroupByOrdered([]int{0, 1, 2, 3, 4, 5}, func(i int) int {
+			return i % 2
+		}),
+	)
+	assert.Equal(
+		t,
+		[]Group[int, int]{
+			{Key: 1, Values: []int{5, 3, 1}},
+			{Key: 0, Values: []int{4, 2, 0}},
+		},
+		SlicesGroupByOrdered([]int{5, 4, 3, 2, 1, 0}, func(i int) int {
+			return i % 2
+		}),
+	)
+}
+
 func TestStringArrayUnmarshalYAML(t *testing.T) {
 	type test struct {
 		Value StringArray `yaml:"value"`

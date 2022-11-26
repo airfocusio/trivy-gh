@@ -5,29 +5,15 @@ files:
 - f1$
 - ^f2
 mitigations:
-- key: not-used
-  label: Package not used
-- key: no-public-networking
-  label: No public networking
-policies:
-- comment: |
-    Comment 1
-  match:
-    id:
-    - CVE-0
-  ignore: true
 - comment: Comment 2
   match:
     artifactNameShort: debian
-  mitigate: not-used
 - match:
     packageName:
     - sh
     - bash
-  mitigate: not-used
 - match:
      class: os-pkgs
-  mitigate: not-used
 - match:
     cvss:
       av:
@@ -40,7 +26,6 @@ policies:
       c: H
       i: H
       a: H
-  mitigate: no-public-networking
 - match:
     not:
       id: CVE-1
@@ -52,3 +37,9 @@ policies:
     or:
     - id: CVE-4
     - id: CVE-5
+ignores:
+- comment: |
+    Comment 1
+  match:
+    id:
+    - CVE-0

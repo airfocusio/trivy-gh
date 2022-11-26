@@ -12,28 +12,19 @@ import (
 type Config struct {
 	Github      ConfigGithub
 	Files       []regexp.Regexp
-	Mitigations []ConfigMitigation
-	Policies    []ConfigPolicy
-}
-
-type ConfigMitigation struct {
-	Key   string `yaml:"key"`
-	Label string `yaml:"label"`
+	Mitigations []ConfigPolicy
+	Ignores     []ConfigPolicy
 }
 
 type ConfigPolicy struct {
-	Comment  string        `yaml:"comment"`
-	Match    PolicyMatcher `yaml:"match"`
-	Ignore   bool          `yaml:"ignore"`
-	Mitigate StringArray   `yaml:"mitigate"`
+	Comment string        `yaml:"comment"`
+	Match   PolicyMatcher `yaml:"match"`
 }
 
 func (c *ConfigPolicy) UnmarshalYAML(value *yaml.Node) error {
 	type rawConfigPolicy struct {
-		Comment  string      `yaml:"comment"`
-		Match    yaml.Node   `yaml:"match"`
-		Ignore   bool        `yaml:"ignore"`
-		Mitigate StringArray `yaml:"mitigate"`
+		Comment string    `yaml:"comment"`
+		Match   yaml.Node `yaml:"match"`
 	}
 	raw := rawConfigPolicy{}
 	err := value.Decode((*rawConfigPolicy)(&raw))
@@ -48,17 +39,15 @@ func (c *ConfigPolicy) UnmarshalYAML(value *yaml.Node) error {
 			c.Match = pm
 		}
 	}
-	c.Ignore = raw.Ignore
-	c.Mitigate = raw.Mitigate
 	return nil
 }
 
 func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 	type rawConfig struct {
-		Github      ConfigGithub       `yaml:"github"`
-		Files       StringArray        `yaml:"files"`
-		Mitigations []ConfigMitigation `yaml:"mitigations"`
-		Policies    []ConfigPolicy     `yaml:"policies"`
+		Github      ConfigGithub   `yaml:"github"`
+		Files       StringArray    `yaml:"files"`
+		Mitigations []ConfigPolicy `yaml:"mitigations"`
+		Ignores     []ConfigPolicy `yaml:"ignores"`
 	}
 	raw := rawConfig{}
 	err := value.Decode((*rawConfig)(&raw))
@@ -79,7 +68,7 @@ func (c *Config) UnmarshalYAML(value *yaml.Node) error {
 		c.Files = files
 	}
 	c.Mitigations = raw.Mitigations
-	c.Policies = raw.Policies
+	c.Ignores = raw.Ignores
 	return nil
 }
 

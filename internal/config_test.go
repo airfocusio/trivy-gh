@@ -27,42 +27,22 @@ func TestLoadConfig(t *testing.T) {
 				*regexp.MustCompile(`f1$`),
 				*regexp.MustCompile(`^f2`),
 			},
-			Mitigations: []ConfigMitigation{
-				{
-					Key:   "not-used",
-					Label: "Not used",
-				},
-				{
-					Key:   "no-public-networking",
-					Label: "No public networking",
-				},
-			},
-			Policies: []ConfigPolicy{
-				{
-					Comment: "Comment 1\n",
-					Match: &IDPolicyMatcher{
-						ID: []string{"CVE-0"},
-					},
-					Ignore: true,
-				},
+			Mitigations: []ConfigPolicy{
 				{
 					Comment: "Comment 2",
 					Match: &ArtifactNameShortPolicyMatcher{
 						ArtifactNameShort: []string{"debian"},
 					},
-					Mitigate: []string{"not-used"},
 				},
 				{
 					Match: &PackageNamePolicyMatcher{
 						PackageName: []string{"sh", "bash"},
 					},
-					Mitigate: []string{"not-used"},
 				},
 				{
 					Match: &ClassPolicyMatcher{
 						Class: []string{"os-pkgs"},
 					},
-					Mitigate: []string{"not-used"},
 				},
 				{
 					Match: &CVSSPolicyMatcher{
@@ -77,7 +57,6 @@ func TestLoadConfig(t *testing.T) {
 							A:  []string{"H"},
 						},
 					},
-					Mitigate: []string{"no-public-networking"},
 				},
 				{
 					Match: &NotPolicyMatcher{
@@ -111,9 +90,18 @@ func TestLoadConfig(t *testing.T) {
 					},
 				},
 			},
+			Ignores: []ConfigPolicy{
+				{
+					Comment: "Comment 1\n",
+					Match: &IDPolicyMatcher{
+						ID: []string{"CVE-0"},
+					},
+				},
+			},
 		}
 		assert.Equal(t, c2.Github, c1.Github)
 		assert.Equal(t, c2.Files, c1.Files)
-		assert.Equal(t, c2.Policies, c1.Policies)
+		assert.Equal(t, c2.Mitigations, c1.Mitigations)
+		assert.Equal(t, c2.Ignores, c1.Ignores)
 	}
 }

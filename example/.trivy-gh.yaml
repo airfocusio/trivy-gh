@@ -3,27 +3,17 @@ github:
   issueRepo: airfocusio/trivy-gh-test
 files: ^/deployment\.yaml$
 mitigations:
-- key: not-used
-  label: Package not used
-- key: no-public-networking
-  label: No public networking
-policies:
-- match:
-    id:
-    - CVE-0
-  ignore: true
-- comment: |
-    Can only be executed from inside the container.
+- comment:  Local exec only.
   match:
     packageName:
     - sh
     - bash
-  mitigate: not-used
-- comment: |
-    This container is purely internal.
-    So we can ignore it.
+- comment: Internal container.
   match:
     cvss:
       av:
       - N
-  mitigate: no-public-networking
+ignores:
+- match:
+    id:
+    - CVE-0

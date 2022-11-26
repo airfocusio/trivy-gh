@@ -29,11 +29,6 @@ type Scan struct {
 	githubClient     *github.Client
 }
 
-type Mitigation struct {
-	Mitigation ConfigMitigation
-	Policy     ConfigPolicy
-}
-
 type UnfixedVulnerability struct {
 	report        types.Report
 	result        types.Result
@@ -42,7 +37,7 @@ type UnfixedVulnerability struct {
 
 type ProcessedUnfixedVulnerability struct {
 	issueNumber   *int
-	mitigations   []Mitigation
+	mitigation    *ConfigPolicy
 	report        types.Report
 	result        types.Result
 	vulnerability types.DetectedVulnerability
@@ -144,9 +139,6 @@ func (s *Scan) Run() error {
 }
 
 func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report types.Report, res types.Result, vuln types.DetectedVulnerability) (*ProcessedUnfixedVulnerability, error) {
-	policy := s.FindMatchingPolicy(report, res, vuln)
-	mitigations := s.EvaluateMitigations(policy)
-
 	// prepare general data
 	id := fmt.Sprintf("%s/%s/%s", artifactNameShort, vuln.PkgName, vuln.VulnerabilityID)
 	idFooter := fmt.Sprintf("trivy-gh-id=%s", id)
@@ -158,12 +150,18 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 		title = vuln.VulnerabilityID
 	}
 
-	if policy != nil && policy.Ignore {
+	ignore := SlicesFind(s.config.Ignores, func(pol ConfigPolicy) bool {
+		return pol.Match.IsMatch(report, res, vuln)
+	})
+	if ignore != nil {
 		s.logger.Debug.Printf("Found vulnerability %q [ignored]\n", title)
 		return nil, nil
 	}
 
 	s.logger.Info.Printf("Found vulnerability %q\n", title)
+	mitigation := SlicesFind(s.config.Mitigations, func(pol ConfigPolicy) bool {
+		return pol.Match.IsMatch(report, res, vuln)
+	})
 
 	cvssVector, cvssScore, _ := FindVulnerabilityCVSSV3(vuln)
 	unnest := s.logger.Nest()
@@ -175,12 +173,8 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 	if cvssVector != "" {
 		s.logger.Info.Printf("CVSS: %s (%.1f)\n", cvssVector, cvssScore)
 	}
-	for _, m := range mitigations {
-		text := StringSanitize(m.Mitigation.Label)
-		if m.Policy.Comment != "" {
-			text = text + ": " + StringSanitize(strings.ReplaceAll(m.Policy.Comment, "\n", " "))
-		}
-		s.logger.Info.Printf("Mitigation: %s\n", text)
+	if mitigation != nil {
+		s.logger.Info.Printf("Mitigation: %s\n", StringSanitizeOneLine(mitigation.Comment))
 	}
 
 	// find existing issue
@@ -206,10 +200,9 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 	}
 
 	if existingIssue == nil {
-		mitigated := len(mitigations) > 0
-		if mitigated {
+		if mitigation != nil {
 			return &ProcessedUnfixedVulnerability{
-				mitigations:   mitigations,
+				mitigation:    mitigation,
 				report:        report,
 				result:        res,
 				vulnerability: vuln,
@@ -230,7 +223,7 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 		if s.issueCreateLimit >= 0 && s.issuesCreated >= s.issueCreateLimit {
 			s.logger.Info.Printf("Skipped creating issue [limit exceeded]\n")
 			return &ProcessedUnfixedVulnerability{
-				mitigations:   mitigations,
+				mitigation:    mitigation,
 				report:        report,
 				result:        res,
 				vulnerability: vuln,
@@ -238,7 +231,7 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 		} else if s.dryRun {
 			s.logger.Info.Printf("Skipped creating issue [dry run]\n")
 			return &ProcessedUnfixedVulnerability{
-				mitigations:   mitigations,
+				mitigation:    mitigation,
 				report:        report,
 				result:        res,
 				vulnerability: vuln,
@@ -253,15 +246,13 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 			s.issuesCreated = s.issuesCreated + 1
 			return &ProcessedUnfixedVulnerability{
 				issueNumber:   createdIssue.Number,
-				mitigations:   mitigations,
+				mitigation:    mitigation,
 				report:        report,
 				result:        res,
 				vulnerability: vuln,
 			}, nil
 		}
 	} else {
-		mitigated := len(mitigations) > 0
-
 		// update existing issue if needed
 		body := s.RenderGithubIssueBody(report, res, vuln, "<!-- "+idFooter+" -->")
 		labels := generateVulnerabilityLabels(artifactNameShort, vuln)
@@ -278,7 +269,7 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 			}
 		}
 		state := "open"
-		if mitigated {
+		if mitigation != nil {
 			state = "closed"
 		}
 		issue := github.IssueRequest{
@@ -293,7 +284,7 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 				s.logger.Info.Printf("Skipped updating issue #%d [dry run]\n", *existingIssue.Number)
 				return &ProcessedUnfixedVulnerability{
 					issueNumber:   existingIssue.Number,
-					mitigations:   mitigations,
+					mitigation:    mitigation,
 					report:        report,
 					result:        res,
 					vulnerability: vuln,
@@ -307,7 +298,7 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 				s.logger.Info.Printf("Updated issue #%d\n", *existingIssue.Number)
 				return &ProcessedUnfixedVulnerability{
 					issueNumber:   existingIssue.Number,
-					mitigations:   mitigations,
+					mitigation:    mitigation,
 					report:        report,
 					result:        res,
 					vulnerability: vuln,
@@ -316,7 +307,7 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 		} else {
 			return &ProcessedUnfixedVulnerability{
 				issueNumber:   existingIssue.Number,
-				mitigations:   mitigations,
+				mitigation:    mitigation,
 				report:        report,
 				result:        res,
 				vulnerability: vuln,
@@ -443,41 +434,6 @@ func (s *Scan) ProcessDashboard(allUnfixedVulnerabilities []ProcessedUnfixedVuln
 	return nil
 }
 
-func (s *Scan) FindMatchingPolicy(report types.Report, res types.Result, vuln types.DetectedVulnerability) *ConfigPolicy {
-	for _, p := range s.config.Policies {
-		if p.Match.IsMatch(report, res, vuln) {
-			return &p
-		}
-	}
-	return nil
-}
-
-func (s *Scan) EvaluateMitigations(policy *ConfigPolicy) []Mitigation {
-	if policy == nil {
-		return []Mitigation{}
-	}
-
-	result := []Mitigation{}
-	for _, key := range policy.Mitigate {
-		var mitigation *ConfigMitigation
-		for _, m := range s.config.Mitigations {
-			if m.Key == key {
-				mitigation = &m
-				break
-			}
-		}
-		if mitigation == nil {
-			s.logger.Info.Printf("Policy references unknown mitigation %s", key)
-			continue
-		}
-		result = append(result, Mitigation{
-			Mitigation: *mitigation,
-			Policy:     *policy,
-		})
-	}
-	return result
-}
-
 func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln types.DetectedVulnerability, footer string) string {
 	cvssVector, cvssScore, _ := FindVulnerabilityCVSSV3(vuln)
 
@@ -529,78 +485,64 @@ func (s *Scan) RenderGithubIssueBody(report types.Report, res types.Result, vuln
 }
 
 func (s *Scan) RenderGithubDashboardIssueBody(allUnfixedVulnerabilities []ProcessedUnfixedVulnerability, footer string) string {
-	type Group struct {
-		Headline string
-		Lines    []string
-	}
-	filterFn := func(elems []ProcessedUnfixedVulnerability, fn func(ProcessedUnfixedVulnerability) bool) []ProcessedUnfixedVulnerability {
-		result := []ProcessedUnfixedVulnerability{}
-		for _, e := range elems {
-			if fn(e) {
-				result = append(result, e)
-			}
-		}
-		return result
-	}
-	groupFn := func(elems []ProcessedUnfixedVulnerability, fn func(ProcessedUnfixedVulnerability) string) []Group {
-		groups := []Group{}
-
-		for _, vuln := range elems {
-			if len(groups) == 0 || groups[len(groups)-1].Headline != vuln.report.ArtifactName {
-				groups = append(groups, Group{
-					Headline: vuln.report.ArtifactName,
-				})
-			}
-			group := &groups[len(groups)-1]
-			group.Lines = append(group.Lines, fn(vuln))
-		}
-
-		return groups
-	}
 	segments := []string{}
 
-	rateLimited := filterFn(allUnfixedVulnerabilities, func(vuln ProcessedUnfixedVulnerability) bool {
-		return len(vuln.mitigations) == 0 && vuln.issueNumber == nil
+	rateLimited := SlicesFilter(allUnfixedVulnerabilities, func(vuln ProcessedUnfixedVulnerability) bool {
+		return vuln.mitigation == nil && vuln.issueNumber == nil
 	})
 	if len(rateLimited) > 0 {
-		groups := groupFn(rateLimited, func(vuln ProcessedUnfixedVulnerability) string {
-			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
-			return fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s`", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.vulnerability.PkgName)
+		groups1 := SlicesGroupByOrdered(rateLimited, func(vuln ProcessedUnfixedVulnerability) string {
+			return vuln.report.ArtifactName
+		})
+		groups2 := SlicesMap(groups1, func(group Group[string, ProcessedUnfixedVulnerability]) Group[string, string] {
+			return Group[string, string]{
+				Key: group.Key,
+				Values: SlicesMap(group.Values, func(vuln ProcessedUnfixedVulnerability) string {
+					_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
+					return fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s`", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.vulnerability.PkgName)
+				}),
+			}
 		})
 
 		str := "### Rate limited\n\n"
 		str = str + "The following issues have not been created yet, as the rate limit for issue creation has been exceeded. They will be created later.\n\n"
-		for _, group := range groups {
-			str = str + "#### " + group.Headline + "\n\n"
-			str = str + strings.Join(group.Lines, "\n")
+		for _, group := range groups2 {
+			str = str + "#### " + group.Key + "\n\n"
+			str = str + strings.Join(group.Values, "\n")
 			str = str + "\n\n"
 		}
 		segments = append(segments, StringSanitize(str))
 	}
 
-	mitigated := filterFn(allUnfixedVulnerabilities, func(vuln ProcessedUnfixedVulnerability) bool {
-		return len(vuln.mitigations) > 0
+	mitigated := SlicesFilter(allUnfixedVulnerabilities, func(vuln ProcessedUnfixedVulnerability) bool {
+		return vuln.mitigation != nil
 	})
 	if len(mitigated) > 0 {
-		groups := groupFn(mitigated, func(vuln ProcessedUnfixedVulnerability) string {
-			_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
-			mitigationTexts := []string{}
-			for _, m := range vuln.mitigations {
-				sanitizedLabel := strings.ReplaceAll(StringSanitize(m.Mitigation.Label), "\n", " ")
-				if m.Policy.Comment == "" {
-					mitigationTexts = append(mitigationTexts, sanitizedLabel)
-				} else {
-					sanitizedComment := strings.ReplaceAll(StringSanitize(m.Policy.Comment), "\n", " ")
-					mitigationTexts = append(mitigationTexts, sanitizedLabel+": "+sanitizedComment)
-				}
-			}
-			return fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s`: %s", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.vulnerability.PkgName, strings.Join(mitigationTexts, ", "))
+		groups1 := SlicesGroupByOrdered(mitigated, func(vuln ProcessedUnfixedVulnerability) string {
+			return vuln.report.ArtifactName
 		})
+		groups2 := SlicesMap(groups1, func(group Group[string, ProcessedUnfixedVulnerability]) Group[string, string] {
+			return Group[string, string]{
+				Key: group.Key,
+				Values: SlicesMap(group.Values, func(vuln ProcessedUnfixedVulnerability) string {
+					_, cvssScore, _ := FindVulnerabilityCVSSV3(vuln.vulnerability)
+					suffix := ""
+					if vuln.mitigation != nil {
+						suffix = StringSanitizeOneLine(vuln.mitigation.Comment)
+					}
+					if suffix != "" {
+						suffix = ": " + suffix
+					}
+					return fmt.Sprintf("- [ ] [%s](%s) **%s** (%.1f) `%s`%s", vuln.vulnerability.VulnerabilityID, vuln.vulnerability.PrimaryURL, RenderCVSSScoreString(cvssScore), cvssScore, vuln.vulnerability.PkgName, suffix)
+				}),
+			}
+		})
+
 		str := "### Mitigated\n\n"
 		str = str + "The following issues are still found, but have been marked as mitigated by some policy. They will stay here in this list until finally fixed.\n\n"
-		for _, group := range groups {
-			str = str + "#### " + group.Headline + "\n\n"
-			str = str + strings.Join(group.Lines, "\n")
+		for _, group := range groups2 {
+			str = str + "#### " + group.Key + "\n\n"
+			str = str + strings.Join(group.Values, "\n")
 			str = str + "\n\n"
 		}
 		segments = append(segments, StringSanitize(str))

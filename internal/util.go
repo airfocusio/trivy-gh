@@ -9,6 +9,7 @@ import (
 	trivydbtypes "github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/types"
 	"github.com/goark/go-cvss/v3/metric"
+	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,13 +46,73 @@ func FileResolvePath(dir string, file string) string {
 func SlicesUnique[E comparable](slice []E) []E {
 	keys := make(map[E]bool)
 	list := []E{}
-	for _, entry := range slice {
-		if _, value := keys[entry]; !value {
-			keys[entry] = true
-			list = append(list, entry)
+	for _, e := range slice {
+		if _, value := keys[e]; !value {
+			keys[e] = true
+			list = append(list, e)
 		}
 	}
 	return list
+}
+
+func SlicesFind[E any](slice []E, fn func(E) bool) *E {
+	for _, e := range slice {
+		if fn(e) {
+			return &e
+		}
+	}
+	return nil
+}
+
+type Group[K comparable, V any] struct {
+	Key    K
+	Values []V
+}
+
+func SlicesGroupByOrdered[K comparable, V any](slice []V, keyFn func(V) K) []Group[K, V] {
+	result := []Group[K, V]{}
+	for _, v := range slice {
+		k := keyFn(v)
+		idx := slices.IndexFunc(result, func(g Group[K, V]) bool {
+			return g.Key == k
+		})
+
+		if idx < 0 {
+			result = append(result, Group[K, V]{
+				Key:    k,
+				Values: []V{v},
+			})
+		} else {
+			result[idx].Values = append(result[idx].Values, v)
+		}
+	}
+	return result
+}
+
+func SlicesMap[I any, O any](slice []I, mapFn func(I) O) []O {
+	result := []O{}
+	for _, e := range slice {
+		result = append(result, mapFn(e))
+	}
+	return result
+}
+
+func SlicesFlatMap[I any, O any](slice []I, mapFn func(I) []O) []O {
+	result := []O{}
+	for _, e := range slice {
+		result = append(result, mapFn(e)...)
+	}
+	return result
+}
+
+func SlicesFilter[E any](slice []E, filterFn func(E) bool) []E {
+	result := []E{}
+	for _, v := range slice {
+		if filterFn(v) {
+			result = append(result, v)
+		}
+	}
+	return result
 }
 
 func StringSanitize(s string) string {
@@ -61,6 +122,15 @@ func StringSanitize(s string) string {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
 	return strings.Join(lines, "\n")
+}
+
+func StringSanitizeOneLine(s string) string {
+	trimmed := strings.Trim(s, "\n ")
+	lines := strings.Split(trimmed, "\n")
+	for i := range lines {
+		lines[i] = strings.TrimRight(lines[i], " ")
+	}
+	return strings.Join(lines, " ")
 }
 
 func StringAbbreviate(str string, maxLength int) string {
