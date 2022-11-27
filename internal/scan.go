@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	trivydbtypes "github.com/aquasecurity/trivy-db/pkg/types"
 	"github.com/aquasecurity/trivy/pkg/types"
@@ -244,6 +245,7 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 			}
 			s.logger.Info.Printf("Created issue #%d\n", *createdIssue.Number)
 			s.issuesCreated = s.issuesCreated + 1
+			time.Sleep(10 * time.Second)
 			return &ProcessedUnfixedVulnerability{
 				issueNumber:   createdIssue.Number,
 				mitigation:    mitigation,
@@ -296,6 +298,7 @@ func (s *Scan) ProcessUnfixedVulnerability(artifactNameShort string, report type
 					return nil, err
 				}
 				s.logger.Info.Printf("Updated issue #%d\n", *existingIssue.Number)
+				time.Sleep(1 * time.Second)
 				return &ProcessedUnfixedVulnerability{
 					issueNumber:   existingIssue.Number,
 					mitigation:    mitigation,
@@ -365,6 +368,7 @@ func (s *Scan) ProcessFixedVulnerabilities(artifactNameShort string, unfixedIssu
 			}
 			issueNumbers = append(issueNumbers, *fixedIssue.Number)
 			s.logger.Info.Printf("Updated issue #%d\n", *fixedIssue.Number)
+			time.Sleep(1 * time.Second)
 		}
 
 		unnest()
@@ -413,6 +417,7 @@ func (s *Scan) ProcessDashboard(allUnfixedVulnerabilities []ProcessedUnfixedVuln
 				return err
 			}
 			s.logger.Info.Printf("Created dashboard issue #%d\n", *createdIssue.Number)
+			time.Sleep(10 * time.Second)
 		}
 	} else {
 		if s.dryRun {
@@ -428,6 +433,7 @@ func (s *Scan) ProcessDashboard(allUnfixedVulnerabilities []ProcessedUnfixedVuln
 				return err
 			}
 			s.logger.Info.Printf("Updated dashboard issue #%d\n", *updatedIssue.Number)
+			time.Sleep(1 * time.Second)
 		}
 	}
 
