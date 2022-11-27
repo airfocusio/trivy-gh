@@ -2,7 +2,6 @@ package internal
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path"
@@ -19,7 +18,7 @@ import (
 
 func TestScanScrapeFile(t *testing.T) {
 	file := path.Join(os.TempDir(), fmt.Sprintf("trivy-gh-%d.yaml", time.Now().UnixNano()))
-	if err := ioutil.WriteFile(file, []byte(`
+	if err := os.WriteFile(file, []byte(`
 foo:
 - image: image1:v1
 - bar:

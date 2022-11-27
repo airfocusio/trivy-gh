@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"github.com/airfocusio/trivy-gh/internal"
 	"github.com/spf13/cobra"
@@ -27,7 +27,7 @@ var (
 		Args:          cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir := scanCmdDirectory
-			fileBytes, err := ioutil.ReadFile(internal.FileResolvePath(dir, scanCmdConfig))
+			fileBytes, err := os.ReadFile(internal.FileResolvePath(dir, scanCmdConfig))
 			if err != nil {
 				return fmt.Errorf("unable to initialize: %w", err)
 			}

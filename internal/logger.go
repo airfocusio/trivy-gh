@@ -2,7 +2,6 @@ package internal
 
 import (
 	"io"
-	"io/ioutil"
 	"log"
 	"os"
 	"strings"
@@ -23,7 +22,7 @@ type Logger struct {
 }
 
 func NewLogger(withDebug bool) Logger {
-	debugWriter := ioutil.Discard
+	debugWriter := io.Discard
 	if withDebug {
 		debugWriter = os.Stdout
 	}
@@ -38,8 +37,8 @@ func NewLogger(withDebug bool) Logger {
 }
 
 func NewNullLogger() Logger {
-	debugWriter := ioutil.Discard
-	infoWriter := ioutil.Discard
+	debugWriter := io.Discard
+	infoWriter := io.Discard
 	return Logger{
 		Debug:       log.New(debugWriter, "", loggerFlags),
 		Info:        log.New(infoWriter, "", loggerFlags),
